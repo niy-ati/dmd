@@ -36,7 +36,7 @@ import dmd.backend.oper;
 import dmd.backend.global : getFileContentsCallback;
 import dmd.common.outbuffer;
 import dmd.backend.rtlsym;
-import dmd.backend.symbol : globsym;
+import dmd.backend.symbol;
 import dmd.backend.ty;
 import dmd.backend.type;
 import dmd.backend.dvarstats;
@@ -237,7 +237,8 @@ void cv8_termfile(const(char)[] objfilename)
         buf.write16(cast(int)(2 + 4 + len + 1));
         buf.write16(S_OBJNAME_V3);
         buf.write32(0);                          // signature
-        buf.write(objfilename.ptr, cast(uint)(len + 1));
+        buf.write(objfilename.ptr, cast(uint)(len));
+        buf.writeByte(0);
     }
 
     // S_COMPILE3 record: honor the configured language and report the real
@@ -565,7 +566,7 @@ void cv8_func_term(Symbol* sfunc)
 
     // Write function end symbol
     buf.write16(2);
-    buf.write16(S_END);
+    buf.write16(S_PROC_ID_END);
 
     currentfuncdata.f1buf = F1_buf;
     currentfuncdata.f1fixup = F1fixup;
@@ -1207,9 +1208,9 @@ idx_t cv8_daarray(type* t, idx_t keyidx, idx_t validx)
     return cv_debtyp(d);
 }
 
-/* Compute a blake3 hash over the *content* of the named source file, so that
+/* Compute a SHA-256 hash over the *content* of the named source file, so that
  * debuggers can verify the source matches. The hash goes into the 32-byte
- * SHA256 checksum slot of the file-checksums (F4) subsection.
+ * SHA-256 checksum slot of the file-checksums (F4) subsection.
  * The content is fetched from the front-end FileManager cache (Module.src)
  * rather than re-read from disk, which would add significant I/O to every build.
  * Returns: true on success (hash filled in), false if the content is unavailable.
@@ -1225,8 +1226,11 @@ bool cv8_filehash(const(char)* filename, ref ubyte[32] hash)
     if (!data)
         return false;
 
-    import dmd.common.blake3;
-    hash = blake3(data[0 .. length]);
+    import dmd.common.sha;
+    SHA!(512, 256) md;
+    md.start();
+    md.put(data[0 .. length]);
+    hash = md.finish();
     return true;
 }
 

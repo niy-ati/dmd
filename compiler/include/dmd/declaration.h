@@ -331,6 +331,9 @@ class TypeInfoDeclaration : public VarDeclaration
 {
 public:
     Type *tinfo;
+#if MARS
+    d_bool hadCodegen;
+#endif
 
     static TypeInfoDeclaration *create(Type *tinfo);
     TypeInfoDeclaration *syntaxCopy(Dsymbol *) override final;
@@ -703,7 +706,7 @@ public:
     LabelDsymbol *searchLabel(Identifier *ident, Loc loc);
     const char *toPrettyChars(bool QualifyTypes = false, bool keepOneMember = false) override;
     const char *toFullSignature();  // for diagnostics, e.g. 'int foo(int x, int y) pure'
-    bool isMain() const;
+    bool isDMain() const;
     bool isCMain() const;
     bool isWinMain() const;
     bool isDllMain() const;
@@ -762,6 +765,8 @@ class CtorDeclaration final : public FuncDeclaration
 public:
     d_bool isCpCtor;
     d_bool isMoveCtor;
+    d_bool isCppBaseCtor;
+    CtorDeclaration *cppBaseCtor;
     CtorDeclaration *syntaxCopy(Dsymbol *) override;
     const char *kind() const override;
 

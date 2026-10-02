@@ -2507,24 +2507,23 @@ struct ASTBase
 
     extern (C++) class CompoundStatement : Statement
     {
-        Statements* statements;
+        Statements statements;
 
-        final extern (D) this(Loc loc, Statements* statements)
+        final extern (D) this(Loc loc, Statements statements)
         {
             super(loc, STMT.Compound);
-            this.statements = statements;
+            this.statements = statements.move();
         }
 
-        final extern (D) this(Loc loc, Statements* statements, STMT stmt)
+        final extern (D) this(Loc loc, Statements statements, STMT stmt)
         {
             super(loc, stmt);
-            this.statements = statements;
+            this.statements = statements.move();
         }
 
         final extern (D) this(Loc loc, Statement[] sts...)
         {
             super(loc, STMT.Compound);
-            statements = new Statements();
             statements.reserve(sts.length);
             foreach (s; sts)
                 statements.push(s);
@@ -2552,9 +2551,9 @@ struct ASTBase
 
     extern (C++) final class CompoundDeclarationStatement : CompoundStatement
     {
-        final extern (D) this(Loc loc, Statements* statements)
+        final extern (D) this(Loc loc, Statements statements)
         {
-            super(loc, statements, STMT.CompoundDeclaration);
+            super(loc, statements.move(), STMT.CompoundDeclaration);
         }
 
         override void accept(Visitor v)
@@ -2567,9 +2566,9 @@ struct ASTBase
     {
         StorageClass stc;
 
-        final extern (D) this(Loc loc, Statements* s, StorageClass stc)
+        final extern (D) this(Loc loc, Statements s, StorageClass stc)
         {
-            super(loc, s, STMT.CompoundAsm);
+            super(loc, s.move(), STMT.CompoundAsm);
             this.stc = stc;
         }
 
@@ -6585,7 +6584,7 @@ struct ASTBase
 
     extern (C++) final class ArrayInitializer : Initializer
     {
-        Expressions index;
+        Initializers index;
         Initializers value;
         uint dim;
         Type type;
@@ -6595,7 +6594,7 @@ struct ASTBase
             super(loc, InitKind.array);
         }
 
-        void addInit(Expression index, Initializer value)
+        void addInit(Initializer index, Initializer value)
         {
             this.index.push(index);
             this.value.push(value);
