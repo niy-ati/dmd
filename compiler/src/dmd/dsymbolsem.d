@@ -5229,6 +5229,14 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
             // TypeInfo, etc.) is the union's overall size and alignment.
             // Requiring full C23 6.2.7 member-by-member compatibility here
             // is stricter than dmd's own cross-file merge actually needs.
+            //
+            // structsize isn't guaranteed to be populated yet here - it's
+            // filled in by a separate, possibly-deferred finalizeSize()
+            // pass, not as part of ordinary semantic completion. Call it
+            // explicitly on both sides; it's a no-op if already done
+            // (guarded by `sizeok`), so this is safe either way.
+            a.finalizeSize();
+            b.finalizeSize();
             if (a.structsize != b.structsize || a.alignment != b.alignment)
             {
                 incompatError();
