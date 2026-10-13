@@ -5232,11 +5232,13 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
             //
             // structsize isn't guaranteed to be populated yet here - it's
             // filled in by a separate, possibly-deferred finalizeSize()
-            // pass, not as part of ordinary semantic completion. Call it
-            // explicitly on both sides; it's a no-op if already done
-            // (guarded by `sizeok`), so this is safe either way.
-            a.finalizeSize();
-            b.finalizeSize();
+            // pass, not as part of ordinary semantic completion. finalizeSize()
+            // itself asserts sizeok != done, so guard each call the same way
+            // every other call site in this file does.
+            if (a.sizeok != Sizeok.done)
+                a.finalizeSize();
+            if (b.sizeok != Sizeok.done)
+                b.finalizeSize();
             if (a.structsize != b.structsize || a.alignment != b.alignment)
             {
                 incompatError();
