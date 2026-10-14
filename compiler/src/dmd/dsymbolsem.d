@@ -5103,20 +5103,10 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
             if (sd.isCsymbol() && sym.isCsymbol())
             {
 
-                bool sdIsMoreComplete;
-                if (!isCCompatible(sd, sym, &sdIsMoreComplete))
+                if (!isCCompatible(sd, sym))
                 {
                     // Already issued an error.
                     errorSupplemental(sd.loc, "C %ss with the same name from different imports are merged", sd.kind);
-                }
-                else if (sdIsMoreComplete)
-                {
-                    /* `sd`'s fields are a strict superset of `sym`'s (e.g. two
-                     * unions with the same name but different members declared
-                     * across files). Promote it so later lookups - and this
-                     * file's own accesses to the extra members - keep working.
-                     */
-                    ts.sym = sd;
                 }
                 else {
                     /* This is two structs imported from different C files.
@@ -5167,14 +5157,7 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
     // Checks if two structs are compatible
     // Implements the rules according to C23 6.2.7
     //
-    // For unions only, `aIsMoreComplete` (when non-null) is set to true if
-    // `a`'s fields are a strict superset of `b`'s, so the caller can promote
-    // `a` to canonical instead of always keeping whichever was seen first.
-    // This is a pairwise comparison: with more than two same-named unions
-    // across more than two files, two declarations that are each individually
-    // a superset of some common third one, but not of each other, will still
-    // correctly be reported as incompatible with each other.
-    static bool isCCompatible(StructDeclaration a, StructDeclaration b, bool* aIsMoreComplete = null)
+    static bool isCCompatible(StructDeclaration a, StructDeclaration b)
     {
         // Get the name of a type, while avoiding exposing "__tagXXX" anonymous structs
         static const(char)* typeName(Type t)
@@ -5241,79 +5224,28 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
             // member starts at offset 0. Each file's own member accesses
             // are already resolved against its own declaration by the time
             // this runs (semantic analysis of `a`/`b` completes before this
-            // cross-file check), so requiring full C23 6.2.7 member-by-member
-            // compatibility (same field count, same order) is stricter than
-            // a cross-file merge actually needs: one file's union is free to
-            // only use a subset of another file's members, as long as every
-            // member it does declare matches (by name, type, alignment and
-            // bitfield width) a member the other side also has.
+            // cross-file check), so the only thing that needs to agree for
+            // one shared runtime representation (size_t sizeof, a single
+            // TypeInfo, etc.) is the union's overall size and alignment.
+            // Requiring full C23 6.2.7 member-by-member compatibility here
+            // is stricter than dmd's own cross-file merge actually needs.
             //
-            // The overall alignment is still required to match exactly - that
-            // reflects a real ABI choice (e.g. `#pragma pack`), not just which
-            // members happen to be declared. Unlike size, alignment doesn't
-            // need finalizeSize() to be populated first.
-            if (a.alignment != b.alignment)
+            // structsize isn't guaranteed to be populated yet here - it's
+            // filled in by a separate, possibly-deferred finalizeSize()
+            // pass, not as part of ordinary semantic completion. finalizeSize()
+            // itself asserts sizeok != done, so guard each call the same way
+            // every other call site in this file does.
+            if (a.sizeok != Sizeok.done)
+                a.finalizeSize();
+            if (b.sizeok != Sizeok.done)
+                b.finalizeSize();
+            if (a.structsize != b.structsize || a.alignment != b.alignment)
             {
                 incompatError();
-                errorSupplemental(a.loc, "`%s` has a different alignment than `%s`",
+                errorSupplemental(a.loc, "`%s` has a different size or alignment than `%s`",
                         a.toPrettyChars(), b.toPrettyChars());
                 return false;
             }
-
-            // Returns true if every named field of `subFields` also appears
-            // in `fullFields` with the same name, type, alignment and
-            // bitfield width. A union with any anonymous field can't be
-            // matched this way, since there's no name to match on.
-            static bool fieldsSubsetOf(VarDeclaration[] subFields, VarDeclaration[] fullFields)
-            {
-                foreach (VarDeclaration subField; subFields)
-                {
-                    if (subField.ident.isAnonymous())
-                        return false;
-
-                    VarDeclaration match;
-                    foreach (VarDeclaration candidate; fullFields)
-                    {
-                        if (candidate.ident == subField.ident)
-                        {
-                            match = candidate;
-                            break;
-                        }
-                    }
-                    if (!match)
-                        return false;
-                    if (!isCCompatibleType(subField.type, match.type))
-                        return false;
-                    if (subField.alignment != match.alignment)
-                        return false;
-
-                    BitFieldDeclaration subBf = subField.isBitFieldDeclaration();
-                    BitFieldDeclaration matchBf = match.isBitFieldDeclaration();
-                    if ((subBf is null) != (matchBf is null))
-                        return false;
-                    if (subBf && matchBf && subBf.fieldWidth != matchBf.fieldWidth)
-                        return false;
-                }
-                return true;
-            }
-
-            immutable bSubsetOfA = fieldsSubsetOf(b.fields[], a.fields[]);
-            immutable aSubsetOfB = fieldsSubsetOf(a.fields[], b.fields[]);
-
-            if (!bSubsetOfA && !aSubsetOfB)
-            {
-                incompatError();
-                errorSupplemental(a.loc, "neither `%s`'s fields nor `%s`'s fields are a superset of the other's",
-                        a.toPrettyChars(), b.toPrettyChars());
-                return false;
-            }
-
-            // `b`'s fields all fit inside `a`'s (or they're identical) -
-            // `a` is at least as complete, so promote it to canonical.
-            // When both hold (identical field sets) keep the existing
-            // first-seen declaration, same as the non-superset case below.
-            if (aIsMoreComplete)
-                *aIsMoreComplete = bSubsetOfA && !aSubsetOfB;
             return true;
         }
         if (a.fields.length != b.fields.length)
