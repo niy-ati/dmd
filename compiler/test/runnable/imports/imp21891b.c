@@ -7,10 +7,4 @@ union executable_code21891 {
     long (*func2)(long a, long b);
     long (*func3)(long a, long b, long c);
 };
-
-union executable_code21891 make_b21891(void* p)
-{
-    union executable_code21891 u;
-    u.code = p;
-    return u;
-}
+typedef union executable_code21891 executable_code21891;

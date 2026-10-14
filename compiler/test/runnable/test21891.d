@@ -5,8 +5,11 @@ import imports.imp21891b;
 
 void main()
 {
-    auto a = make_a21891(null);
-    auto b = make_b21891(null);
+    imports.imp21891a.executable_code21891 a;
+    a.code = null;
     assert(a.code is null);
+
+    imports.imp21891b.executable_code21891 b;
+    b.code = null;
     assert(b.code is null);
 }
