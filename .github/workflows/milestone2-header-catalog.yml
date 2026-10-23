@@ -61,9 +61,7 @@ jobs:
 
       - name: 'Windows: install zlib via vcpkg'
         if: runner.os == 'Windows'
-        run: |
-          vcpkg install zlib:x64-windows
-          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> $GITHUB_ENV
+        run: vcpkg install zlib:x64-windows
 
       - name: Locate built dmd
         run: |
@@ -78,7 +76,7 @@ jobs:
           echo "DMD_BIN=$DMD_BIN" >> $GITHUB_ENV
           "$DMD_BIN" --version
 
-      - name: 'Catalog: ImportC vs real windows.h'
+      - name: 'Catalog: windows.h bare parse (baseline)'
         if: runner.os == 'Windows'
         continue-on-error: true
         run: |
@@ -86,17 +84,54 @@ jobs:
           #include <windows.h>
           int main(void) { return 0; }
           EOF
-          echo "=== ImportC compiling real MSVC windows.h ===" > windows_h_catalog.log
+          echo "=== ImportC parsing real MSVC windows.h (no intrinsic use) ===" > windows_h_catalog.log
           "$DMD_BIN" -c probe_windows_h.c 2>&1 | tee -a windows_h_catalog.log
 
-      - name: 'Catalog: ImportC vs real zlib.h'
+      - name: 'Catalog: MSVC intrinsic usage (issue 20270)'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          cat > probe_intrin.c << 'EOF'
+          #include <intrin.h>
+          int main(void) {
+              long x = 0;
+              _InterlockedExchangeAdd(&x, 1);
+              return (int)x;
+          }
+          EOF
+          echo "=== ImportC compiling real <intrin.h>, calling _InterlockedExchangeAdd (issue 20270) ===" > intrin_catalog.log
+          "$DMD_BIN" -c probe_intrin.c 2>&1 | tee -a intrin_catalog.log
+
+      - name: 'Catalog: __forceinline dead-code link test (issue 21266)'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          cat > probe_forceinline.c << 'EOF'
+          void i_do_not_exist(void);
+          __forceinline void i_am_not_called(void){
+              i_do_not_exist();
+          }
+          int main(void){ return 0; }
+          EOF
+          echo "=== ImportC compiling+linking __forceinline dead-code case (issue 21266) ===" > forceinline_catalog.log
+          "$DMD_BIN" probe_forceinline.c -of=probe_forceinline.exe 2>&1 | tee -a forceinline_catalog.log
+          if [ -f probe_forceinline.exe ]; then
+            echo "RESULT: linked successfully (issue not reproduced on this dmd)" >> forceinline_catalog.log
+          else
+            echo "RESULT: failed to link (issue 21266 reproduced)" >> forceinline_catalog.log
+          fi
+
+      - name: 'Catalog: real zlib.h declarations (zlibVersion)'
         continue-on-error: true
         run: |
           cat > probe_zlib_h.c << 'EOF'
           #include <zlib.h>
-          int main(void) { return 0; }
+          int main(void) {
+              const char *v = zlibVersion();
+              return v ? 0 : 1;
+          }
           EOF
-          echo "=== ImportC compiling real zlib.h ($OS_NAME) ===" > zlib_h_catalog.log
+          echo "=== ImportC compiling real zlib.h, calling zlibVersion() ($OS_NAME) ===" > zlib_h_catalog.log
           if [ "$RUNNER_OS" == "Windows" ]; then
             ZINC="$VCPKG_ROOT/installed/x64-windows/include"
             "$DMD_BIN" -c -I"$ZINC" probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
@@ -107,12 +142,11 @@ jobs:
       - name: Print catalog summary
         if: always()
         run: |
-          echo "::group::windows.h catalog"
-          cat windows_h_catalog.log 2>/dev/null || echo "(not run on this OS)"
-          echo "::endgroup::"
-          echo "::group::zlib.h catalog"
-          cat zlib_h_catalog.log 2>/dev/null || echo "(no log)"
-          echo "::endgroup::"
+          for f in windows_h_catalog.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log; do
+            echo "::group::$f"
+            cat "$f" 2>/dev/null || echo "(not run on this OS)"
+            echo "::endgroup::"
+          done
 
       - name: Upload catalog logs
         if: always()
@@ -121,5 +155,7 @@ jobs:
           name: header-catalog-${{ matrix.os }}
           path: |
             windows_h_catalog.log
+            intrin_catalog.log
+            forceinline_catalog.log
             zlib_h_catalog.log
           if-no-files-found: ignore
