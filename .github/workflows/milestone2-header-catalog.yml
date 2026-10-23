@@ -139,8 +139,9 @@ jobs:
               find /c/vcpkg/installed -maxdepth 3 >> zlib_h_catalog.log
             fi
             ZINC=$(dirname "$ZLIB_H")
-            echo "Using zlib include dir: $ZINC" >> zlib_h_catalog.log
-            "$DMD_BIN" -c -I"$ZINC" probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
+            WINC="${ZINC/\/c\//C:/}"
+            echo "Using zlib include dir: $ZINC (passed to cl.exe as $WINC)" >> zlib_h_catalog.log
+            "$DMD_BIN" -c "-P=/I$WINC" probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
           else
             "$DMD_BIN" -c probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
           fi
