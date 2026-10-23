@@ -146,17 +146,16 @@ jobs:
             "$DMD_BIN" -c probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
           fi
 
-      - name: 'Catalog: real sqlite os_win.c through ImportC'
+      - name: 'Catalog: real sqlite amalgamation through ImportC'
         if: runner.os == 'Windows'
         continue-on-error: true
         run: |
-          git clone --depth 1 https://github.com/sqlite/sqlite.git sqlite_src
-          vcpkg install sqlite3:x64-windows
-          SQLITE3_H=$(find /c/vcpkg/installed -iname 'sqlite3.h' | head -1)
-          SQLITE3_INC=$(dirname "$SQLITE3_H")
-          WINC="${SQLITE3_INC/\/c\//C:/}"
-          echo "=== ImportC compiling real sqlite src/os_win.c ===" > sqlite_catalog.log
-          "$DMD_BIN" -c -Isqlite_src/src "-P=-I$WINC" sqlite_src/src/os_win.c 2>&1 | tee -a sqlite_catalog.log
+          AMAL_PATH=$(curl -s https://www.sqlite.org/download.html | grep -oE '[0-9]{4}/sqlite-amalgamation-[0-9]+\.zip' | head -1)
+          curl -sL -o sqlite-amalgamation.zip "https://www.sqlite.org/$AMAL_PATH"
+          unzip -q sqlite-amalgamation.zip
+          AMAL_DIR=$(find . -maxdepth 1 -iname 'sqlite-amalgamation-*' -type d | head -1)
+          echo "=== ImportC compiling real sqlite amalgamation ($AMAL_PATH) ===" > sqlite_catalog.log
+          "$DMD_BIN" -c -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" 2>&1 | tee -a sqlite_catalog.log
 
       - name: Print catalog summary
         if: always()
