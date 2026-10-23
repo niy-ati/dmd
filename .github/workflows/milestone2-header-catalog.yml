@@ -153,9 +153,10 @@ jobs:
           git clone --depth 1 https://github.com/sqlite/sqlite.git sqlite_src
           vcpkg install sqlite3:x64-windows
           SQLITE3_H=$(find /c/vcpkg/installed -iname 'sqlite3.h' | head -1)
-          cp "$SQLITE3_H" sqlite_src/src/sqlite3.h
+          SQLITE3_INC=$(dirname "$SQLITE3_H")
+          WINC="${SQLITE3_INC/\/c\//C:/}"
           echo "=== ImportC compiling real sqlite src/os_win.c ===" > sqlite_catalog.log
-          "$DMD_BIN" -c -Isqlite_src/src sqlite_src/src/os_win.c 2>&1 | tee -a sqlite_catalog.log
+          "$DMD_BIN" -c -Isqlite_src/src "-P=-I$WINC" sqlite_src/src/os_win.c 2>&1 | tee -a sqlite_catalog.log
 
       - name: Print catalog summary
         if: always()
