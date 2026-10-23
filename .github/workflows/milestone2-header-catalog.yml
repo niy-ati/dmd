@@ -67,7 +67,14 @@ jobs:
 
       - name: Locate built dmd
         run: |
-          DMD_BIN=$(find generated -iname 'dmd*' -type f | grep -v '\.o$' | head -1)
+          DOTEXE=""
+          if [ "$RUNNER_OS" == "Windows" ]; then DOTEXE=".exe"; fi
+          DMD_BIN="generated/$OS_NAME/release/$MODEL/dmd$DOTEXE"
+          if [ ! -f "$DMD_BIN" ]; then
+            echo "Expected compiler not found at $DMD_BIN" >&2
+            find generated -type f \( -iname 'dmd' -o -iname 'dmd.exe' \) >&2
+            exit 1
+          fi
           echo "DMD_BIN=$DMD_BIN" >> $GITHUB_ENV
           "$DMD_BIN" --version
 
