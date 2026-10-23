@@ -141,7 +141,7 @@ jobs:
             ZINC=$(dirname "$ZLIB_H")
             WINC="${ZINC/\/c\//C:/}"
             echo "Using zlib include dir: $ZINC (passed to cl.exe as $WINC)" >> zlib_h_catalog.log
-            "$DMD_BIN" -c "-P=//I$WINC" probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
+            "$DMD_BIN" -c "-P=-I$WINC" probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
           else
             "$DMD_BIN" -c probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
           fi
