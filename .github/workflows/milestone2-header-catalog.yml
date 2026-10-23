@@ -1,0 +1,118 @@
+name: Milestone 2 Header Catalog
+on:
+  workflow_dispatch:
+  push:
+    branches: [ milestone2-header-catalog ]
+
+jobs:
+  catalog:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    env:
+      OS_NAME: ${{ startsWith(matrix.os, 'windows') && 'windows' || 'linux' }}
+      MODEL: 64
+      HOST_DMD: dmd
+      FULL_BUILD: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 50
+
+      - name: Set N
+        run: echo "N=$(nproc 2>/dev/null || echo 2)" >> $GITHUB_ENV
+
+      - name: 'Posix: install prerequisites'
+        if: runner.os != 'Windows'
+        run: sudo -E ci/cirrusci.sh
+
+      - name: 'Posix: install host compiler'
+        if: runner.os != 'Windows'
+        run: ci/run.sh install_host_compiler
+
+      - name: 'Windows: install host compiler'
+        if: runner.os == 'Windows'
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd
+
+      - name: Set up repos
+        run: ci/run.sh setup_repos master
+
+      - name: Build dmd
+        run: ci/run.sh build
+
+      - name: 'Windows: set up MSVC environment'
+        if: runner.os == 'Windows'
+        uses: seanmiddleditch/gha-setup-vsdevenv@v5
+        with:
+          arch: x64
+
+      - name: 'Linux: install zlib headers'
+        if: runner.os != 'Windows'
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: 'Windows: install zlib via vcpkg'
+        if: runner.os == 'Windows'
+        run: |
+          vcpkg install zlib:x64-windows
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> $GITHUB_ENV
+
+      - name: Locate built dmd
+        run: |
+          DMD_BIN=$(find generated -iname 'dmd*' -type f | grep -v '\.o$' | head -1)
+          echo "DMD_BIN=$DMD_BIN" >> $GITHUB_ENV
+          "$DMD_BIN" --version
+
+      - name: 'Catalog: ImportC vs real windows.h'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          cat > probe_windows_h.c << 'EOF'
+          #include <windows.h>
+          int main(void) { return 0; }
+          EOF
+          echo "=== ImportC compiling real MSVC windows.h ===" > windows_h_catalog.log
+          "$DMD_BIN" -c probe_windows_h.c 2>&1 | tee -a windows_h_catalog.log
+
+      - name: 'Catalog: ImportC vs real zlib.h'
+        continue-on-error: true
+        run: |
+          cat > probe_zlib_h.c << 'EOF'
+          #include <zlib.h>
+          int main(void) { return 0; }
+          EOF
+          echo "=== ImportC compiling real zlib.h ($OS_NAME) ===" > zlib_h_catalog.log
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            ZINC="$VCPKG_ROOT/installed/x64-windows/include"
+            "$DMD_BIN" -c -I"$ZINC" probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
+          else
+            "$DMD_BIN" -c probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
+          fi
+
+      - name: Print catalog summary
+        if: always()
+        run: |
+          echo "::group::windows.h catalog"
+          cat windows_h_catalog.log 2>/dev/null || echo "(not run on this OS)"
+          echo "::endgroup::"
+          echo "::group::zlib.h catalog"
+          cat zlib_h_catalog.log 2>/dev/null || echo "(no log)"
+          echo "::endgroup::"
+
+      - name: Upload catalog logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: header-catalog-${{ matrix.os }}
+          path: |
+            windows_h_catalog.log
+            zlib_h_catalog.log
+          if-no-files-found: ignore
