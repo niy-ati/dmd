@@ -133,7 +133,13 @@ jobs:
           EOF
           echo "=== ImportC compiling real zlib.h, calling zlibVersion() ($OS_NAME) ===" > zlib_h_catalog.log
           if [ "$RUNNER_OS" == "Windows" ]; then
-            ZINC="$VCPKG_ROOT/installed/x64-windows/include"
+            ZLIB_H=$(find /c/vcpkg/installed -iname 'zlib.h' | head -1)
+            if [ -z "$ZLIB_H" ]; then
+              echo "Could not locate zlib.h under /c/vcpkg/installed" | tee -a zlib_h_catalog.log
+              find /c/vcpkg/installed -maxdepth 3 >> zlib_h_catalog.log
+            fi
+            ZINC=$(dirname "$ZLIB_H")
+            echo "Using zlib include dir: $ZINC" >> zlib_h_catalog.log
             "$DMD_BIN" -c -I"$ZINC" probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
           else
             "$DMD_BIN" -c probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
