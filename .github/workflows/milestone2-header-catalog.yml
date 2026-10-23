@@ -146,10 +146,18 @@ jobs:
             "$DMD_BIN" -c probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
           fi
 
+      - name: 'Catalog: real sqlite os_win.c through ImportC'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/sqlite/sqlite.git sqlite_src
+          echo "=== ImportC compiling real sqlite src/os_win.c ===" > sqlite_catalog.log
+          "$DMD_BIN" -c -Isqlite_src/src sqlite_src/src/os_win.c 2>&1 | tee -a sqlite_catalog.log
+
       - name: Print catalog summary
         if: always()
         run: |
-          for f in windows_h_catalog.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log; do
+          for f in windows_h_catalog.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log sqlite_catalog.log; do
             echo "::group::$f"
             cat "$f" 2>/dev/null || echo "(not run on this OS)"
             echo "::endgroup::"
@@ -165,4 +173,5 @@ jobs:
             intrin_catalog.log
             forceinline_catalog.log
             zlib_h_catalog.log
+            sqlite_catalog.log
           if-no-files-found: ignore
