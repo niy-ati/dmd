@@ -163,7 +163,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/curl/curl.git curl_src
           echo "=== ImportC compiling real curl lib/vtls/schannel.c (Windows-native TLS backend) ===" > curl_catalog.log
-          "$DMD_BIN" -c -Icurl_src/lib -Icurl_src/include curl_src/lib/vtls/schannel.c 2>&1 | tee -a curl_catalog.log
+          "$DMD_BIN" -c "-P=-Icurl_src/lib" "-P=-Icurl_src/include" curl_src/lib/vtls/schannel.c 2>&1 | tee -a curl_catalog.log
 
       - name: Print catalog summary
         if: always()
