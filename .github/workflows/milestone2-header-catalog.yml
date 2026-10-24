@@ -133,16 +133,42 @@ jobs:
           EOF
           echo "=== ImportC compiling real zlib.h, calling zlibVersion() ($OS_NAME) ===" > zlib_h_catalog.log
           if [ "$RUNNER_OS" == "Windows" ]; then
-            ZINC="$VCPKG_ROOT/installed/x64-windows/include"
-            "$DMD_BIN" -c -I"$ZINC" probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
+            ZLIB_H=$(find /c/vcpkg/installed -iname 'zlib.h' | head -1)
+            if [ -z "$ZLIB_H" ]; then
+              echo "Could not locate zlib.h under /c/vcpkg/installed" | tee -a zlib_h_catalog.log
+              find /c/vcpkg/installed -maxdepth 3 >> zlib_h_catalog.log
+            fi
+            ZINC=$(dirname "$ZLIB_H")
+            WINC="${ZINC/\/c\//C:/}"
+            echo "Using zlib include dir: $ZINC (passed to cl.exe as $WINC)" >> zlib_h_catalog.log
+            "$DMD_BIN" -c "-P=-I$WINC" probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
           else
             "$DMD_BIN" -c probe_zlib_h.c 2>&1 | tee -a zlib_h_catalog.log
           fi
 
+      - name: 'Catalog: real sqlite amalgamation through ImportC'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          AMAL_PATH=$(curl -s https://www.sqlite.org/download.html | grep -oE '[0-9]{4}/sqlite-amalgamation-[0-9]+\.zip' | head -1)
+          curl -sL -o sqlite-amalgamation.zip "https://www.sqlite.org/$AMAL_PATH"
+          unzip -q sqlite-amalgamation.zip
+          AMAL_DIR=$(find . -maxdepth 1 -iname 'sqlite-amalgamation-*' -type d | head -1)
+          echo "=== ImportC compiling real sqlite amalgamation ($AMAL_PATH) ===" > sqlite_catalog.log
+          "$DMD_BIN" -c -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" 2>&1 | tee -a sqlite_catalog.log
+
+      - name: 'Catalog: real curl schannel.c through ImportC'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/curl/curl.git curl_src
+          echo "=== ImportC compiling real curl lib/vtls/schannel.c (Windows-native TLS backend) ===" > curl_catalog.log
+          "$DMD_BIN" -c -Icurl_src/lib -Icurl_src/include curl_src/lib/vtls/schannel.c 2>&1 | tee -a curl_catalog.log
+
       - name: Print catalog summary
         if: always()
         run: |
-          for f in windows_h_catalog.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log; do
+          for f in windows_h_catalog.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log sqlite_catalog.log curl_catalog.log; do
             echo "::group::$f"
             cat "$f" 2>/dev/null || echo "(not run on this OS)"
             echo "::endgroup::"
@@ -158,4 +184,6 @@ jobs:
             intrin_catalog.log
             forceinline_catalog.log
             zlib_h_catalog.log
+            sqlite_catalog.log
+            curl_catalog.log
           if-no-files-found: ignore
