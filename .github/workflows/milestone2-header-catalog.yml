@@ -157,10 +157,18 @@ jobs:
           echo "=== ImportC compiling real sqlite amalgamation ($AMAL_PATH) ===" > sqlite_catalog.log
           "$DMD_BIN" -c -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" 2>&1 | tee -a sqlite_catalog.log
 
+      - name: 'Catalog: real curl schannel.c through ImportC'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/curl/curl.git curl_src
+          echo "=== ImportC compiling real curl lib/vtls/schannel.c (Windows-native TLS backend) ===" > curl_catalog.log
+          "$DMD_BIN" -c -Icurl_src/lib -Icurl_src/include curl_src/lib/vtls/schannel.c 2>&1 | tee -a curl_catalog.log
+
       - name: Print catalog summary
         if: always()
         run: |
-          for f in windows_h_catalog.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log sqlite_catalog.log; do
+          for f in windows_h_catalog.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log sqlite_catalog.log curl_catalog.log; do
             echo "::group::$f"
             cat "$f" 2>/dev/null || echo "(not run on this OS)"
             echo "::endgroup::"
@@ -177,4 +185,5 @@ jobs:
             forceinline_catalog.log
             zlib_h_catalog.log
             sqlite_catalog.log
+            curl_catalog.log
           if-no-files-found: ignore
