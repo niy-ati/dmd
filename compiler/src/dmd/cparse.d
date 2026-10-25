@@ -21,6 +21,7 @@ import dmd.errorsink;
 import dmd.hdrgen : toErrMsg;
 import dmd.id;
 import dmd.identifier;
+import dmd.importc_dce : registerImportCInlineCandidate;
 import dmd.lexer;
 import dmd.location;
 import dmd.parse;
@@ -2267,6 +2268,8 @@ final class CParser(AST) : Parser!AST
         stc &= ~STC.gshared;    // no gshared functions
         auto fd = new AST.FuncDeclaration(id.loc, prevloc, id.name, stc, ft, specifier.noreturn);
         specifiersToFuncDeclaration(fd, specifier);
+        if (fd.inlining == PINLINE.always)
+            registerImportCInlineCandidate(fd);
 
         AST.Statements stmts;
 
@@ -2636,7 +2639,7 @@ final class CParser(AST) : Parser!AST
             }
         }
 
-        specifier.scw = scw;
+        specifier.scw |= scw;
         specifier.mod = mod;
 
         // Convert TKW bits to type t
