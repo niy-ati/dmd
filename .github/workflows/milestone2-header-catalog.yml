@@ -1,0 +1,241 @@
+name: Milestone 2 Header Catalog
+on:
+  workflow_dispatch:
+  push:
+    branches: [ milestone2-header-catalog, milestone2-combined-verify ]
+
+jobs:
+  catalog:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    env:
+      OS_NAME: ${{ startsWith(matrix.os, 'windows') && 'windows' || 'linux' }}
+      MODEL: 64
+      HOST_DMD: dmd
+      FULL_BUILD: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 50
+
+      - name: Set N
+        run: echo "N=$(nproc 2>/dev/null || echo 2)" >> $GITHUB_ENV
+
+      - name: 'Posix: install prerequisites'
+        if: runner.os != 'Windows'
+        run: sudo -E ci/cirrusci.sh
+
+      - name: 'Posix: install host compiler'
+        if: runner.os != 'Windows'
+        run: ci/run.sh install_host_compiler
+
+      - name: 'Windows: install host compiler'
+        if: runner.os == 'Windows'
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: dmd
+
+      - name: Set up repos
+        run: ci/run.sh setup_repos master
+
+      - name: Build dmd
+        run: ci/run.sh build
+
+      - name: 'Windows: set up MSVC environment'
+        if: runner.os == 'Windows'
+        uses: seanmiddleditch/gha-setup-vsdevenv@v5
+        with:
+          arch: x64
+
+      - name: 'Linux: install zlib headers'
+        if: runner.os != 'Windows'
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: 'Windows: install zlib via vcpkg'
+        if: runner.os == 'Windows'
+        run: vcpkg install zlib:x64-windows
+
+      - name: Locate built dmd
+        run: |
+          DOTEXE=""
+          if [ "$RUNNER_OS" == "Windows" ]; then DOTEXE=".exe"; fi
+          DMD_BIN="generated/$OS_NAME/release/$MODEL/dmd$DOTEXE"
+          if [ ! -f "$DMD_BIN" ]; then
+            echo "Expected compiler not found at $DMD_BIN" >&2
+            find generated -type f \( -iname 'dmd' -o -iname 'dmd.exe' \) >&2
+            exit 1
+          fi
+          echo "DMD_BIN=$DMD_BIN" >> $GITHUB_ENV
+          "$DMD_BIN" --version
+
+      - name: 'Catalog: windows.h real-world link test (issue 20270)'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          cat > probe_windows_h.c << 'EOF'
+          #include <windows.h>
+          int main(void) {
+              return GetTickCount() >= 0 ? 0 : 1;
+          }
+          EOF
+          echo "=== ImportC compiling+linking real MSVC windows.h, calling GetTickCount() ===" > windows_h_catalog.log
+          "$DMD_BIN" probe_windows_h.c -of=probe_windows_h.exe 2>&1 | tee -a windows_h_catalog.log
+          if [ -f probe_windows_h.exe ]; then
+            echo "RESULT: linked successfully" >> windows_h_catalog.log
+            ./probe_windows_h.exe && echo "RESULT: ran successfully, exit 0" >> windows_h_catalog.log || echo "RESULT: ran but exited nonzero" >> windows_h_catalog.log
+          else
+            echo "RESULT: failed to link" >> windows_h_catalog.log
+          fi
+
+      - name: 'Catalog: real MSVC intrinsics via windows.h, unreferenced forceinline wrappers (issue 20270 root cause)'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          cat > probe_intrin.c << 'EOF'
+          /* Reconstructed from the exact symbols reported in dlang/dmd#20270:
+           * real winnt.h __forceinline wrappers around VC intrinsics, called
+           * through #include <windows.h>, but never invoked from main. The
+           * original bug: ImportC generated code for these anyway and failed
+           * to link on the intrinsics it has no implementation for.
+           */
+          #include <windows.h>
+          int main(void) {
+              return 0;
+          }
+          EOF
+          echo "=== ImportC compiling+linking real windows.h with unreferenced forceinline intrinsic wrappers (issue 20270) ===" > intrin_catalog.log
+          "$DMD_BIN" probe_intrin.c -of=probe_intrin.exe 2>&1 | tee -a intrin_catalog.log
+          if [ -f probe_intrin.exe ]; then
+            echo "RESULT: linked successfully (issue 20270 not reproduced on this dmd)" >> intrin_catalog.log
+          else
+            echo "RESULT: failed to link (issue 20270 reproduced)" >> intrin_catalog.log
+          fi
+
+      - name: 'Catalog: __forceinline dead-code link test (issue 21266)'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          cat > probe_forceinline.c << 'EOF'
+          void i_do_not_exist(void);
+          __forceinline void i_am_not_called(void){
+              i_do_not_exist();
+          }
+          int main(void){ return 0; }
+          EOF
+          echo "=== ImportC compiling+linking __forceinline dead-code case (issue 21266) ===" > forceinline_catalog.log
+          "$DMD_BIN" probe_forceinline.c -of=probe_forceinline.exe 2>&1 | tee -a forceinline_catalog.log
+          if [ -f probe_forceinline.exe ]; then
+            echo "RESULT: linked successfully (issue not reproduced on this dmd)" >> forceinline_catalog.log
+          else
+            echo "RESULT: failed to link (issue 21266 reproduced)" >> forceinline_catalog.log
+          fi
+
+      - name: 'Catalog: real zlib.h declarations (zlibVersion)'
+        continue-on-error: true
+        run: |
+          cat > probe_zlib_h.c << 'EOF'
+          #include <zlib.h>
+          int main(void) {
+              const char *v = zlibVersion();
+              return v ? 0 : 1;
+          }
+          EOF
+          echo "=== ImportC compiling+linking real zlib.h, calling zlibVersion() ($OS_NAME) ===" > zlib_h_catalog.log
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            ZLIB_H=$(find /c/vcpkg/installed -iname 'zlib.h' | head -1)
+            if [ -z "$ZLIB_H" ]; then
+              echo "Could not locate zlib.h under /c/vcpkg/installed" | tee -a zlib_h_catalog.log
+              find /c/vcpkg/installed -maxdepth 3 >> zlib_h_catalog.log
+            fi
+            ZINC=$(dirname "$ZLIB_H")
+            ZLIB=$(find /c/vcpkg/installed -iname 'zlib.lib' | head -1)
+            WINC="${ZINC/\/c\//C:/}"
+            WLIB="${ZLIB/\/c\//C:/}"
+            echo "Using zlib include dir: $ZINC, lib: $ZLIB" >> zlib_h_catalog.log
+            "$DMD_BIN" "-P=-I$WINC" probe_zlib_h.c "$WLIB" -of=probe_zlib_h.exe 2>&1 | tee -a zlib_h_catalog.log
+            if [ -f probe_zlib_h.exe ]; then
+              echo "RESULT: linked successfully" >> zlib_h_catalog.log
+              ./probe_zlib_h.exe && echo "RESULT: ran successfully, exit 0" >> zlib_h_catalog.log || echo "RESULT: ran but exited nonzero" >> zlib_h_catalog.log
+            else
+              echo "RESULT: failed to link" >> zlib_h_catalog.log
+            fi
+          else
+            sudo find / -iname 'libz.a' -o -iname 'libz.so' 2>/dev/null | head -5 >> zlib_h_catalog.log
+            "$DMD_BIN" probe_zlib_h.c -L-lz -of=probe_zlib_h.exe 2>&1 | tee -a zlib_h_catalog.log
+            if [ -f probe_zlib_h.exe ]; then
+              echo "RESULT: linked successfully" >> zlib_h_catalog.log
+              ./probe_zlib_h.exe && echo "RESULT: ran successfully, exit 0" >> zlib_h_catalog.log || echo "RESULT: ran but exited nonzero" >> zlib_h_catalog.log
+            else
+              echo "RESULT: failed to link" >> zlib_h_catalog.log
+            fi
+          fi
+
+      - name: 'Catalog: real sqlite amalgamation through ImportC - full compile and link (issue requires __try/__except)'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          AMAL_PATH=$(curl -s https://www.sqlite.org/download.html | grep -oE '[0-9]{4}/sqlite-amalgamation-[0-9]+\.zip' | head -1)
+          curl -sL -o sqlite-amalgamation.zip "https://www.sqlite.org/$AMAL_PATH"
+          unzip -q sqlite-amalgamation.zip
+          AMAL_DIR=$(find . -maxdepth 1 -iname 'sqlite-amalgamation-*' -type d | head -1)
+          cat > sqlite_main.c << 'EOF'
+          #include "sqlite3.h"
+          int main(void) {
+              const char *v = sqlite3_libversion();
+              return v ? 0 : 1;
+          }
+          EOF
+          echo "=== ImportC compiling+linking real sqlite amalgamation ($AMAL_PATH), calling sqlite3_libversion() ===" > sqlite_catalog.log
+          "$DMD_BIN" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe 2>&1 | tee -a sqlite_catalog.log
+          if [ -f sqlite_probe.exe ]; then
+            echo "RESULT: linked successfully" >> sqlite_catalog.log
+            ./sqlite_probe.exe && echo "RESULT: ran successfully, exit 0" >> sqlite_catalog.log || echo "RESULT: ran but exited nonzero" >> sqlite_catalog.log
+          else
+            echo "RESULT: failed to link" >> sqlite_catalog.log
+          fi
+
+      - name: 'Catalog: real curl schannel.c through ImportC'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/curl/curl.git curl_src
+          echo "=== ImportC compiling real curl lib/vtls/schannel.c (Windows-native TLS backend) ===" > curl_catalog.log
+          # config-win32.h is a legacy, hand-maintained file that only supports
+          # MSVC 2010-2013 by design (real builds use CMake/winbuild instead);
+          # override the version check so we can test ImportC against curl's
+          # actual C source rather than this unrelated legacy gate. This probe
+          # is compile-only (-c): schannel.c is one translation unit out of
+          # curl's full library and has no main of its own, so a link test
+          # would require building the entire library, out of scope here.
+          "$DMD_BIN" -c "-P=-Icurl_src/lib" "-P=-Icurl_src/include" "-P=-D_MSC_VER=1800" curl_src/lib/vtls/schannel.c 2>&1 | tee -a curl_catalog.log
+
+      - name: Print catalog summary
+        if: always()
+        run: |
+          for f in windows_h_catalog.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log sqlite_catalog.log curl_catalog.log; do
+            echo "::group::$f"
+            cat "$f" 2>/dev/null || echo "(not run on this OS)"
+            echo "::endgroup::"
+          done
+
+      - name: Upload catalog logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: header-catalog-${{ matrix.os }}
+          path: |
+            windows_h_catalog.log
+            intrin_catalog.log
+            forceinline_catalog.log
+            zlib_h_catalog.log
+            sqlite_catalog.log
+            curl_catalog.log
+          if-no-files-found: ignore
