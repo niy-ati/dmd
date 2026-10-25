@@ -841,6 +841,11 @@ final class CParser(AST) : Parser!AST
                     e = cparseBuiltin_va_arg();
                     break;
                 }
+                else if (token.ident is Id.msvc_va_start)
+                {
+                    e = cparseMsvcVaStart();
+                    break;
+                }
                 else
                     importBuiltins = true;  // probably one of those compiler extensions
             }
@@ -1723,6 +1728,44 @@ final class CParser(AST) : Parser!AST
         auto tie = new AST.ScopeExp(loc, ti);
 
         AST.Expression e = new AST.CallExp(loc, tie, arguments);
+
+        check(TOK.rightParenthesis);
+        return e;
+    }
+
+    /*****************************
+     * msvc intrinsic, as used by vadefs.h / stdarg.h:
+     *    void __va_start(va_list *ap, lastparam)
+     * Rewrite as a call to `va_start` from `core.stdc.stdarg`:
+     *    va_start(*ap, lastparam);
+     * This has to be done as a parse-time rewrite, rather than a library
+     * wrapper function, because `va_start` is itself an intrinsic that only
+     * works correctly when it runs directly in the function whose variadic
+     * arguments it's reading - wrapping it in an ordinary function would
+     * bind it to that wrapper's own stack frame instead of the caller's
+     * (see https://issues.dlang.org/show_bug.cgi?id=20374).
+     * Lexer is on `__va_start`
+     */
+    private AST.Expression cparseMsvcVaStart()
+    {
+        importBuiltins = true;  // need core.stdc.stdarg
+
+        nextToken();
+        check(TOK.leftParenthesis);
+
+        auto apExp = cparseAssignExp();
+        check(TOK.comma);
+        auto lastParam = cparseAssignExp();
+
+        const loc = loc;
+        auto apDeref = new AST.PtrExp(loc, apExp);
+
+        auto arguments = new AST.Expressions();
+        arguments.push(apDeref);
+        arguments.push(lastParam);
+
+        auto ie = new AST.IdentifierExp(loc, Id.builtin_va_start);
+        AST.Expression e = new AST.CallExp(loc, ie, arguments);
 
         check(TOK.rightParenthesis);
         return e;

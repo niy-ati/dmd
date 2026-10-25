@@ -526,6 +526,8 @@ immutable Msgtable[] msgtable =
     { "importc_builtins", "__importc_builtins" },
     { "builtin_va_list", "__builtin_va_list" },
     { "builtin_va_arg", "__builtin_va_arg" },
+    { "builtin_va_start", "__builtin_va_start" },
+    { "msvc_va_start", "__va_start" },
     { "va_list_tag", "__va_list_tag" },
     { "va_arg" },
     { "pack" },
