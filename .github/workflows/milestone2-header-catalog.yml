@@ -200,9 +200,12 @@ jobs:
           }
           EOF
           WAMAL=$(cd "$AMAL_DIR" && pwd -W 2>/dev/null || pwd)
+          MSVC_BUILTINS_H=$(find druntime -iname 'importc_msvc_builtins.h' | head -1)
+          WMSVC_BUILTINS_H=$(cd "$(dirname "$MSVC_BUILTINS_H")" && pwd -W 2>/dev/null || pwd)/$(basename "$MSVC_BUILTINS_H")
           echo "=== ImportC compiling+linking real sqlite amalgamation ($AMAL_PATH), calling sqlite3_libversion() ===" > sqlite_catalog.log
           echo "amalgamation dir: $AMAL_DIR (win: $WAMAL)" >> sqlite_catalog.log
-          "$DMD_BIN" "-P=-I$WAMAL" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe 2>&1 | tee -a sqlite_catalog.log
+          echo "msvc builtins header: $MSVC_BUILTINS_H (win: $WMSVC_BUILTINS_H)" >> sqlite_catalog.log
+          "$DMD_BIN" "-P=-I$WAMAL" "-P=/FI$WMSVC_BUILTINS_H" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe 2>&1 | tee -a sqlite_catalog.log
           if [ -f sqlite_probe.exe ]; then
             echo "RESULT: linked successfully" >> sqlite_catalog.log
             ./sqlite_probe.exe && echo "RESULT: ran successfully, exit 0" >> sqlite_catalog.log || echo "RESULT: ran but exited nonzero" >> sqlite_catalog.log
