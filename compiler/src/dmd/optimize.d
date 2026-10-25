@@ -459,7 +459,12 @@ Expression optimize(Expression e, int result, bool keepLvalue = false)
         }
         if (auto ve = e.e1.isVarExp())
         {
-            if (!ve.var.isReference() && !ve.var.isImportedSymbol())
+            // A function with __declspec(dllimport)/DLLIMPORT always resolves
+            // through the import table regardless of where it's referenced
+            // from (see glue.tocsym.createImport); a plain `export` function
+            // with no body has no such mechanism and must still be rejected.
+            auto vefd = ve.var.isFuncDeclaration();
+            if (!ve.var.isReference() && (!ve.var.isImportedSymbol() || (vefd && vefd.dllImport)))
             {
                 bool hasOverloads = ve.hasOverloads;
                 if (auto v = ve.var.isVarDeclaration())

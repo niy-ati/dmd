@@ -1993,8 +1993,14 @@ public:
         {
             Declaration decl = ve.var;
 
-            // We cannot take the address of an imported symbol at compile time
-            if (decl.isImportedSymbol())
+            // We cannot take the address of an imported symbol at compile time,
+            // except for a function with __declspec(dllimport)/DLLIMPORT, which
+            // always resolves through the import table regardless of where it's
+            // referenced from (see glue.tocsym.createImport). A function that is
+            // merely `export` with no body (the original motivating case for this
+            // check) has no such resolution mechanism and must still be rejected.
+            auto declfd = decl.isFuncDeclaration();
+            if (decl.isImportedSymbol() && !(declfd && declfd.dllImport))
             {
                 eSink.error(e.loc, "cannot take address of imported symbol `%s` at compile time", decl.toErrMsg());
                 result = CTFEExp.cantexp;
