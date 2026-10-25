@@ -151,12 +151,14 @@ jobs:
           echo "=== ImportC compiling+linking real zlib.h, calling zlibVersion() ($OS_NAME) ===" > zlib_h_catalog.log
           if [ "$RUNNER_OS" == "Windows" ]; then
             ZLIB_H=$(find /c/vcpkg/installed -iname 'zlib.h' | head -1)
-            if [ -z "$ZLIB_H" ]; then
-              echo "Could not locate zlib.h under /c/vcpkg/installed" | tee -a zlib_h_catalog.log
-              find /c/vcpkg/installed -maxdepth 3 >> zlib_h_catalog.log
+            ZLIB=$(find /c/vcpkg/installed -iname '*zlib*.lib' ! -ipath '*debug*' | head -1)
+            if [ -z "$ZLIB_H" ] || [ -z "$ZLIB" ]; then
+              echo "Could not locate zlib.h and/or a zlib .lib under /c/vcpkg/installed" | tee -a zlib_h_catalog.log
+              echo "zlib.h candidate: '$ZLIB_H'" >> zlib_h_catalog.log
+              echo "zlib lib candidate: '$ZLIB'" >> zlib_h_catalog.log
+              find /c/vcpkg/installed -iname '*zlib*' >> zlib_h_catalog.log
             fi
             ZINC=$(dirname "$ZLIB_H")
-            ZLIB=$(find /c/vcpkg/installed -iname 'zlib.lib' | head -1)
             WINC="${ZINC/\/c\//C:/}"
             WLIB="${ZLIB/\/c\//C:/}"
             echo "Using zlib include dir: $ZINC, lib: $ZLIB" >> zlib_h_catalog.log
@@ -168,7 +170,7 @@ jobs:
               echo "RESULT: failed to link" >> zlib_h_catalog.log
             fi
           else
-            sudo find / -iname 'libz.a' -o -iname 'libz.so' 2>/dev/null | head -5 >> zlib_h_catalog.log
+            dpkg -L zlib1g-dev 2>/dev/null | grep -E 'libz\.(a|so)' >> zlib_h_catalog.log
             "$DMD_BIN" probe_zlib_h.c -L-lz -of=probe_zlib_h.exe 2>&1 | tee -a zlib_h_catalog.log
             if [ -f probe_zlib_h.exe ]; then
               echo "RESULT: linked successfully" >> zlib_h_catalog.log
@@ -193,8 +195,10 @@ jobs:
               return v ? 0 : 1;
           }
           EOF
+          WAMAL=$(cd "$AMAL_DIR" && pwd -W 2>/dev/null || pwd)
           echo "=== ImportC compiling+linking real sqlite amalgamation ($AMAL_PATH), calling sqlite3_libversion() ===" > sqlite_catalog.log
-          "$DMD_BIN" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe 2>&1 | tee -a sqlite_catalog.log
+          echo "amalgamation dir: $AMAL_DIR (win: $WAMAL)" >> sqlite_catalog.log
+          "$DMD_BIN" "-P=-I$WAMAL" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe 2>&1 | tee -a sqlite_catalog.log
           if [ -f sqlite_probe.exe ]; then
             echo "RESULT: linked successfully" >> sqlite_catalog.log
             ./sqlite_probe.exe && echo "RESULT: ran successfully, exit 0" >> sqlite_catalog.log || echo "RESULT: ran but exited nonzero" >> sqlite_catalog.log
