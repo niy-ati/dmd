@@ -52,6 +52,7 @@ import dmd.globals;
 import dmd.hdrgen;
 import dmd.id;
 import dmd.identifier;
+import dmd.importc_dce;
 import dmd.inline;
 import dmd.link;
 import dmd.location;
@@ -713,6 +714,8 @@ private int tryMain(const(char)[][] argv, out Param params)
         }
     }
     }
+
+    scanImportCInlineUsage(&modules);
 
     if (global.warnings)
         errorOnWarning();
