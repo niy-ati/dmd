@@ -151,12 +151,14 @@ jobs:
           echo "=== ImportC compiling+linking real zlib.h, calling zlibVersion() ($OS_NAME) ===" > zlib_h_catalog.log
           if [ "$RUNNER_OS" == "Windows" ]; then
             ZLIB_H=$(find /c/vcpkg/installed -iname 'zlib.h' | head -1)
-            ZLIB=$(find /c/vcpkg/installed -iname '*zlib*.lib' ! -ipath '*debug*' | head -1)
-            if [ -z "$ZLIB_H" ] || [ -z "$ZLIB" ]; then
+            MANIFEST=$(find /c/vcpkg/installed -iname 'zlib_*.list' | head -1)
+            ZLIB_REL=$(grep -iE '\.lib$' "$MANIFEST" | grep -iv debug | head -1)
+            ZLIB="/c/vcpkg/installed/$ZLIB_REL"
+            if [ -z "$ZLIB_H" ] || [ ! -f "$ZLIB" ]; then
               echo "Could not locate zlib.h and/or a zlib .lib under /c/vcpkg/installed" | tee -a zlib_h_catalog.log
               echo "zlib.h candidate: '$ZLIB_H'" >> zlib_h_catalog.log
-              echo "zlib lib candidate: '$ZLIB'" >> zlib_h_catalog.log
-              find /c/vcpkg/installed -iname '*zlib*' >> zlib_h_catalog.log
+              echo "manifest: '$MANIFEST', lib candidate: '$ZLIB'" >> zlib_h_catalog.log
+              cat "$MANIFEST" >> zlib_h_catalog.log
             fi
             ZINC=$(dirname "$ZLIB_H")
             WINC="${ZINC/\/c\//C:/}"
