@@ -61,7 +61,7 @@ jobs:
 
       - name: 'Windows: install zlib via vcpkg'
         if: runner.os == 'Windows'
-        run: vcpkg install zlib:x64-windows
+        run: vcpkg install zlib:x64-windows-static
 
       - name: Locate built dmd
         run: |
@@ -167,7 +167,8 @@ jobs:
             "$DMD_BIN" "-P=-I$WINC" probe_zlib_h.c "$WLIB" -of=probe_zlib_h.exe 2>&1 | tee -a zlib_h_catalog.log
             if [ -f probe_zlib_h.exe ]; then
               echo "RESULT: linked successfully" >> zlib_h_catalog.log
-              ./probe_zlib_h.exe && echo "RESULT: ran successfully, exit 0" >> zlib_h_catalog.log || echo "RESULT: ran but exited nonzero" >> zlib_h_catalog.log
+              ./probe_zlib_h.exe; RC=$?
+              echo "RESULT: exit code $RC" >> zlib_h_catalog.log
             else
               echo "RESULT: failed to link" >> zlib_h_catalog.log
             fi
@@ -176,7 +177,8 @@ jobs:
             "$DMD_BIN" probe_zlib_h.c -L-lz -of=probe_zlib_h.exe 2>&1 | tee -a zlib_h_catalog.log
             if [ -f probe_zlib_h.exe ]; then
               echo "RESULT: linked successfully" >> zlib_h_catalog.log
-              ./probe_zlib_h.exe && echo "RESULT: ran successfully, exit 0" >> zlib_h_catalog.log || echo "RESULT: ran but exited nonzero" >> zlib_h_catalog.log
+              ./probe_zlib_h.exe; RC=$?
+              echo "RESULT: exit code $RC" >> zlib_h_catalog.log
             else
               echo "RESULT: failed to link" >> zlib_h_catalog.log
             fi
