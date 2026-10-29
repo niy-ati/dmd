@@ -132,6 +132,17 @@ private extern (C++) final class ImportCInlineUsageVisitor : SemanticTimeTransit
             mark(se.var);
     }
 
+    // A direct call's resolved callee is CallExp.f, set independently of
+    // e1 once semantic analysis devirtualizes/resolves the call - e1 alone
+    // (what the base Expression traversal above sees) cannot be relied on
+    // to find it, so this is checked explicitly.
+    override void visit(CallExp ce)
+    {
+        if (ce.f)
+            mark(ce.f);
+        super.visit(ce);
+    }
+
     private void mark(Declaration d)
     {
         if (auto fd = d.isFuncDeclaration())
