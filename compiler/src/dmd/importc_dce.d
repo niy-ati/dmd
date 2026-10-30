@@ -67,12 +67,12 @@ void scanImportCInlineUsage(Modules* modules)
     if (!candidates.length)
         return;
 
-    scope v = new ImportCInlineUsageVisitor(candidates);
+    scope v = new ImportCInlineUsageVisitor();
     foreach (m; *modules)
         visitDsymbolTree(m, v);
 
     foreach (fd; candidates)
-        if (fd !in v.referenced)
+        if (!fd.importCInlineReferenced)
             fd.skipCodegen = true;
 }
 
@@ -112,15 +112,6 @@ private extern (C++) final class ImportCInlineUsageVisitor : SemanticTimeTransit
 {
     alias visit = SemanticTimeTransitiveVisitor.visit;
 
-    bool[FuncDeclaration] isCandidate;
-    bool[FuncDeclaration] referenced;
-
-    extern (D) this(FuncDeclaration[] candidates) scope
-    {
-        foreach (fd; candidates)
-            isCandidate[fd] = true;
-    }
-
     // VarExp/SymOffExp have no dedicated override point in this visitor
     // hierarchy, so this catches them (and everything else) via their
     // common Expression base instead.
@@ -146,7 +137,6 @@ private extern (C++) final class ImportCInlineUsageVisitor : SemanticTimeTransit
     private void mark(Declaration d)
     {
         if (auto fd = d.isFuncDeclaration())
-            if (fd in isCandidate)
-                referenced[fd] = true;
+            fd.importCInlineReferenced = true;
     }
 }
