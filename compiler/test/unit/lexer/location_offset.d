@@ -550,6 +550,9 @@ enum ignoreTokens
     __pragma,
     __int128,
     __attribute__,
+    __try,
+    __except,
+    __finally,
 
     max_,
 };
