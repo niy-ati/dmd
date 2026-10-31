@@ -1,7 +1,7 @@
-// DIAGNOSTIC: plain D, not ImportC. Confirms whether catching a thrown
-// exception inside an extern(C)-linkage function crashes the same way on
-// Windows LDC, isolating whether this is about extern(C) linkage itself
-// rather than anything ImportC-parsing-specific.
+// A caught Throwable must always get D linkage for its variable, even
+// inside an extern(C) function - it was inheriting the enclosing scope's
+// C linkage instead, which some backends mishandle when generating the
+// exception landing pad for it (crashed under Windows LDC specifically).
 
 extern(C) int caughtPath()
 {
@@ -9,7 +9,7 @@ extern(C) int caughtPath()
     {
         throw new Exception("test");
     }
-    catch (Throwable __seh)
+    catch (Throwable e)
     {
         return 2;
     }
