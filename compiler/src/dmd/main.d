@@ -53,7 +53,6 @@ import dmd.globals;
 import dmd.hdrgen;
 import dmd.id;
 import dmd.identifier;
-import dmd.importc_dce;
 import dmd.inline;
 import dmd.link;
 import dmd.location;

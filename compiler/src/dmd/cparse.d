@@ -21,7 +21,6 @@ import dmd.errorsink;
 import dmd.hdrgen : toErrMsg;
 import dmd.id;
 import dmd.identifier;
-import dmd.importc_dce : registerImportCInlineCandidate;
 import dmd.lexer;
 import dmd.location;
 import dmd.parse;
