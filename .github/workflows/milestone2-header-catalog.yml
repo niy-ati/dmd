@@ -239,9 +239,12 @@ jobs:
           echo "MSVC_BUILTINS_H=$MSVC_BUILTINS_H" >> curl_catalog.log
           echo "WMSVC_BUILTINS_H=$WMSVC_BUILTINS_H" >> curl_catalog.log
           set +e
-          "$DMD_BIN" -c "-P=-Icurl_src/lib" "-P=-Icurl_src/include" "-P=-D_MSC_VER=1800" "-P=-DUSE_SCHANNEL" "-P=-DUSE_WINDOWS_SSPI" "-P=-DBUILDING_LIBCURL" "-P=-FI\"$WMSVC_BUILTINS_H\"" curl_src/lib/vtls/schannel.c > dmd_out.log 2>&1
+          rm -f schannel.obj
+          "$DMD_BIN" -c -v "-P=-Icurl_src/lib" "-P=-Icurl_src/include" "-P=-D_MSC_VER=1800" "-P=-DUSE_SCHANNEL" "-P=-DUSE_WINDOWS_SSPI" "-P=-DBUILDING_LIBCURL" "-P=-FI\"$WMSVC_BUILTINS_H\"" curl_src/lib/vtls/schannel.c > dmd_out.log 2>&1
           echo "EXIT_CODE=$?" >> curl_catalog.log
-          cat dmd_out.log >> curl_catalog.log
+          echo "OBJ_SIZE=$(stat -c%s schannel.obj 2>/dev/null || echo missing)" >> curl_catalog.log
+          wc -l dmd_out.log >> curl_catalog.log
+          tail -40 dmd_out.log >> curl_catalog.log
           set -e
 
       - name: Print catalog summary
