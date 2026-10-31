@@ -184,7 +184,7 @@ jobs:
             fi
           fi
 
-      - name: 'Catalog: real sqlite amalgamation through ImportC - full compile and link (issue requires __try/__except)'
+      - name: 'Catalog: real sqlite amalgamation through ImportC - full compile and link'
         if: runner.os == 'Windows'
         continue-on-error: true
         run: |
@@ -205,7 +205,14 @@ jobs:
           echo "=== ImportC compiling+linking real sqlite amalgamation ($AMAL_PATH), calling sqlite3_libversion() ===" > sqlite_catalog.log
           echo "amalgamation dir: $AMAL_DIR (win: $WAMAL)" >> sqlite_catalog.log
           echo "msvc builtins header: $MSVC_BUILTINS_H (win: $WMSVC_BUILTINS_H)" >> sqlite_catalog.log
-          "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe 2>&1 | tee -a sqlite_catalog.log
+          # sqlite auto-enables SQLITE_USE_SEH under _MSC_VER, wrapping its
+          # WAL mmap code in __try/__except and calling GetExceptionCode()/
+          # GetExceptionInformation(). ImportC doesn't support those (the
+          # hardware exception context they need isn't preserved by the
+          # time it reaches a catchable D exception), so omit it the same
+          # way sqlite's own docs say to: SQLITE_OMIT_SEH. Falls back to
+          # sqlite's plain, non-SEH WAL handling.
+          "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe 2>&1 | tee -a sqlite_catalog.log
           if [ -f sqlite_probe.exe ]; then
             echo "RESULT: linked successfully" >> sqlite_catalog.log
             ./sqlite_probe.exe && echo "RESULT: ran successfully, exit 0" >> sqlite_catalog.log || echo "RESULT: ran but exited nonzero" >> sqlite_catalog.log
@@ -230,7 +237,15 @@ jobs:
           EOF
           echo "=== ImportC compiling+linking real sqlite amalgamation ($AMAL_PATH), calling sqlite3_libversion() ===" > sqlite_catalog.log
           echo "amalgamation dir: $AMAL_DIR" >> sqlite_catalog.log
-          "$DMD_BIN" "-P=-I$AMAL_DIR" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -L-lpthread -L-ldl -of=sqlite_probe 2>&1 | tee -a sqlite_catalog.log
+          # sqlite auto-enables its __uint128_t multiply path (SQLITE_USE_UINT128)
+          # whenever __GNUC__/__clang__ is defined, which ImportC's preprocessor
+          # pass sets for header compatibility even though dmd has no real
+          # 128-bit integer type; SQLITE_DISABLE_INTRINSIC is sqlite's own
+          # documented flag for falling back to its portable multiply instead.
+          # Separately, ImportC shells out to the system preprocessor, so glibc's
+          # linux/types.h sees a real __SIZEOF_INT128__ and typedefs __s128/__u128
+          # from it unconditionally; undefine it so that header skips them too.
+          "$DMD_BIN" "-P=-I$AMAL_DIR" "-P=-DSQLITE_DISABLE_INTRINSIC=1" "-P=-U__SIZEOF_INT128__" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -L-lpthread -L-ldl -of=sqlite_probe 2>&1 | tee -a sqlite_catalog.log
           if [ -f sqlite_probe ]; then
             echo "RESULT: linked successfully" >> sqlite_catalog.log
             ./sqlite_probe && echo "RESULT: ran successfully, exit 0" >> sqlite_catalog.log || echo "RESULT: ran but exited nonzero" >> sqlite_catalog.log
