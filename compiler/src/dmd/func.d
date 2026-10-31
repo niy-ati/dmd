@@ -377,6 +377,22 @@ extern (C++) class FuncDeclaration : Declaration
     // Track it to give error messages for multiple entrypoints
     __gshared FuncDeclaration lastMain;
 
+    /// Functions seen while parsing ImportC that might be dead
+    /// inline/__forceinline candidates; checked for real once semantic
+    /// analysis of the whole program is done, in scanImportCInlineUsage.
+    extern (D) __gshared FuncDeclaration[] importCInlineCandidates;
+
+    /***********************************************************
+     * Register this as a possible ImportC inline/__forceinline dead-code
+     * candidate. Called from the parser, before fbody is attached; fbody
+     * and the other qualifying conditions are checked later, for real, in
+     * scanImportCInlineUsage().
+     */
+    extern (D) final void registerImportCInlineCandidate()
+    {
+        importCInlineCandidates ~= this;
+    }
+
     /// Sibling nested functions which called this one
     FuncDeclarations siblingCallers;
 

@@ -2188,7 +2188,7 @@ final class CParser(AST) : Parser!AST
                         !(specifier.scw & (SCW.xextern | SCW.xstatic | SCW.x_Thread_local) || level == LVL.global))
                         initializer = new AST.VoidInitializer(token.loc);
                     auto vd = new AST.VarDeclaration(id.loc, dt, id.name, initializer, specifiersToSTC(level, specifier));
-                    specifiersToVarDeclaration(vd, specifier);
+                    specifiersToVarDeclaration(level, vd, specifier);
                     s = vd;
                 }
                 if (level != LVL.global)
@@ -2377,7 +2377,7 @@ final class CParser(AST) : Parser!AST
         auto fd = new AST.FuncDeclaration(id.loc, prevloc, id.name, stc, ft, specifier.noreturn);
         specifiersToFuncDeclaration(fd, specifier);
         if (fd.inlining == PINLINE.always)
-            registerImportCInlineCandidate(fd);
+            fd.registerImportCInlineCandidate();
 
         AST.Statements stmts;
 
@@ -4910,13 +4910,23 @@ final class CParser(AST) : Parser!AST
     /***********************
      * Add attributes from Specifier to variable
      * Params:
-     *  vd = function to apply them to
+     *  level = declaration context
+     *  vd = variable to apply them to
      *  specifier = specifiers
      */
-    void specifiersToVarDeclaration(AST.VarDeclaration vd, const ref Specifier specifier)
+    void specifiersToVarDeclaration(LVL level, AST.VarDeclaration vd, const ref Specifier specifier)
     {
         vd.dllImport = specifier.dllimport;
         vd.dllExport = specifier.dllexport;
+
+        // C `static` at file scope is internal linkage: invisible outside
+        // this translation unit. D's own `static` storage class doesn't
+        // restrict cross-module access the way C's does, and setting
+        // vd.visibility here directly would just get overwritten once
+        // dsymbolSemantic() runs for this declaration, so it has to be
+        // fixed up again afterwards instead - see registerImportCStaticGlobal().
+        if (level == LVL.global && (specifier.scw & SCW.xstatic))
+            vd.registerImportCStaticGlobal();
     }
 
     /***********************

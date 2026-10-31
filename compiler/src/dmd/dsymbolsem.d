@@ -2554,7 +2554,7 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
                 Type next = tsa.next.toBasetype();
                 if (next.ty == TY.Tchar || next.ty == TY.Twchar || next.ty == TY.Tdchar)
                 {
-                    tsa.dim = new IntegerExp(loc, se.len, Type.tsize_t);
+                    tsa.dim = new IntegerExp(loc, se.length, Type.tsize_t);
                     return true;
                 }
                 return false;
@@ -3428,8 +3428,6 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
                     // https://issues.dlang.org/show_bug.cgi?id=14166
                     // Don't run CTFE for the temporary variables inside typeof
                     dsym._init = dsym._init.initializerSemantic(sc, dsym.type, sc.intypeof == 1 ? INITnointerpret : INITinterpret, global.errorSink);
-                    import dmd.semantic2 : lowerStaticAAs;
-                    lowerStaticAAs(dsym, sc);
                     auto init_err = dsym._init.isExpInitializer();
                     if (init_err && init_err.exp.op == EXP.showCtfeContext)
                     {
@@ -10388,9 +10386,9 @@ bool _isZeroInit(Expression exp)
             auto se = cast(StringExp)exp;
 
             if (se.type.toBasetype().ty == Tarray) // if initializing a dynamic array
-                return se.len == 0;
+                return se.length == 0;
 
-            foreach (i; 0 .. se.len)
+            foreach (i; 0 .. se.length)
             {
                 if (se.getIndex(i) != 0)
                     return false;

@@ -192,8 +192,15 @@ int traceHandlerOpApplyImpl(size_t numFrames,
         return locations[startIdx .. $].processCallstack(null, 0, dg);
 
     // find address -> file, line mapping using dwarf debug_line
-    return image.processDebugLineSectionData(
-        (line) => locations[startIdx .. $].processCallstack(line, image.baseAddress, dg));
+    return image.processDebugSections(
+        (ref const DebugSections sections) => locations[startIdx .. $].processCallstack(&sections, image.baseAddress, dg));
+}
+
+/// The DWARF sections used to resolve addresses, empty if not present
+struct DebugSections
+{
+    /// `.debug_line`: line number programs
+    const(ubyte)[] line;
 }
 
 struct TraceInfoBuffer
@@ -242,14 +249,15 @@ struct TraceInfoBuffer
 
 private:
 
-int processCallstack(Location[] locations, const(ubyte)[] debugLineSectionData,
+int processCallstack(Location[] locations, const(DebugSections)* sections,
                      size_t baseAddress, scope int delegate(ref size_t, ref const(char[])) dg)
 {
-    if (debugLineSectionData)
-        resolveAddresses(debugLineSectionData, locations, baseAddress);
+    const hasDebugLine = sections !is null && sections.line.length;
+    if (hasDebugLine)
+        resolveAddresses(*sections, locations, baseAddress);
     version (Darwin)
     {
-        if (!debugLineSectionData)
+        if (!hasDebugLine)
             resolveAddressesWithAtos(locations);
     }
 
@@ -408,9 +416,9 @@ version (Darwin) {
 }
 
 /**
- * Resolve the addresses of `locations` using `debugLineSectionData`
+ * Resolve the addresses of `locations` using the `.debug_line` section
  *
- * Runs the DWARF state machine on `debugLineSectionData`,
+ * Runs the DWARF state machine on `sections.line`,
  * assuming it represents a debugging program describing the addresses
  * in a continous and increasing manner.
  *
@@ -418,18 +426,18 @@ version (Darwin) {
  * file / lines informations.
  *
  * Note that the lifetime of the `Location` data is bound to the lifetime
- * of `debugLineSectionData`.
+ * of the data in `sections`.
  *
  * Params:
- *   debugLineSectionData = A DWARF program to feed the state machine
+ *   sections = The DWARF sections, `line` being the program to feed the state machine
  *   locations = The locations to resolve
  *   baseAddress = The offset to apply to every address
  */
-void resolveAddresses(const(ubyte)[] debugLineSectionData, Location[] locations, size_t baseAddress) @nogc nothrow
+void resolveAddresses(ref const DebugSections sections, Location[] locations, size_t baseAddress) @nogc nothrow
 {
     size_t numberOfLocationsFound = 0;
 
-    const(ubyte)[] dbg = debugLineSectionData;
+    const(ubyte)[] dbg = sections.line;
     while (dbg.length > 0)
     {
         debug(DwarfDebugMachine) printf("new debug program\n");
@@ -573,13 +581,13 @@ bool runStateMachine(ref const(LineNumberProgram) lp, scope RunStateMachineCallb
         ubyte opcode = program.read!ubyte();
         if (opcode < lp.opcodeBase)
         {
-            switch (opcode) with (StandardOpcode)
+            switch (opcode) with (DW_LNS)
             {
                 case extendedOp:
                     size_t len = cast(size_t) program.readULEB128();
                     ubyte eopcode = program.read!ubyte();
 
-                    switch (eopcode) with (ExtendedOpcode)
+                    switch (eopcode) with (DW_LNE)
                     {
                         case endSequence:
                             machine.isEndSequence = true;
@@ -802,50 +810,96 @@ enum DW_LNCT : ushort
     hiUser = 0x3fff,
 }
 
+/// Attribute forms defined by the DWARF debugging information format.
+///
+/// The form determines how an attribute value is encoded in DWARF data.
 enum DW_FORM : ubyte
 {
+    /// An address-sized value (unsigned integer in the target's address size)
     addr = 1,
+    /// A 2-byte byte count followed by that many bytes
     block2 = 3,
+    /// A 4-byte byte count followed by that many bytes
     block4 = 4,
+    /// A 2-byte unsigned constant
     data2 = 5,
+    /// A 4-byte unsigned constant
     data4 = 6,
+    /// An 8-byte unsigned constant
     data8 = 7,
+    /// An inline null-terminated string
     string_ = 8,
+    /// An unsigned LEB128 byte count followed by that many bytes
     block = 9,
+    /// A 1-byte byte count followed by that many bytes
     block1 = 10,
+    /// A 1-byte unsigned constant
     data1 = 11,
+    /// A 1-byte flag
     flag = 12,
+    /// A signed LEB128 constant
     sdata = 13,
+    /// A 4- or 8-byte offset into the .debug_str section
     strp = 14,
+    /// An unsigned LEB128 constant
     udata = 15,
+    /// A 4- or 8-byte offset into the .debug_info section
     ref_addr = 16,
+    /// A 1-byte offset from the start of the containing compilation unit
     ref1 = 17,
+    /// A 2-byte offset from the start of the containing compilation unit
     ref2 = 18,
+    /// A 4-byte offset from the start of the containing compilation unit
     ref4 = 19,
+    /// An 8-byte offset from the start of the containing compilation unit
     ref8 = 20,
+    /// An unsigned LEB128 offset from the start of the containing compilation unit
     ref_udata = 21,
+    /// An unsigned LEB128 form code followed by a value in that form
     indirect = 22,
+    /// A 4- or 8-byte offset into the applicable debug section - Introduced in DWARF4
     sec_offset = 23,
+    /// An unsigned LEB128 byte count followed by a DWARF expression or location description - Introduced in DWARF4
     exprloc = 24,
+    /// A flag that is implicitly true and consumes no bytes - Introduced in DWARF4
     flag_present = 25,
+    /// An unsigned LEB128 index into a table of offsets in the .debug_str_offsets section - Introduced in DWARF5
     strx = 26,
+    /// An unsigned LEB128 index into a table of addresses in the .debug_addr section - Introduced in DWARF5
     addrx = 27,
+    /// A 4-byte offset into the .debug_info section of a supplementary object file - Introduced in DWARF5
     ref_sup4 = 28,
+    /// A 4- or 8-byte offset into the .debug_str section of a supplementary object file - Introduced in DWARF5
     strp_sup = 29,
+    /// A 16-byte constant - Introduced in DWARF5
     data16 = 30,
+    /// A 4- or 8-byte offset into the .debug_line_str section - Introduced in DWARF5
     line_strp = 31,
+    /// An 8-byte type signature - Introduced in DWARF4
     ref_sig8 = 32,
+    /// A signed LEB128 constant stored in the abbreviation declaration rather than the attribute value - Introduced in DWARF5
     implicit_const = 33,
+    /// An unsigned LEB128 index into a table of offsets in the .debug_loclists section - Introduced in DWARF5
     loclistx = 34,
+    /// An unsigned LEB128 index into a table of offsets in the .debug_rnglists section - Introduced in DWARF5
     rnglistx = 35,
+    /// An 8-byte offset into the .debug_info section of a supplementary object file - Introduced in DWARF5
     ref_sup8 = 36,
+    /// A 1-byte unsigned index into a table of offsets in the .debug_str_offsets section - Introduced in DWARF5
     strx1 = 37,
+    /// A 2-byte unsigned index into a table of offsets in the .debug_str_offsets section - Introduced in DWARF5
     strx2 = 38,
+    /// A 3-byte unsigned index into a table of offsets in the .debug_str_offsets section - Introduced in DWARF5
     strx3 = 39,
+    /// A 4-byte unsigned index into a table of offsets in the .debug_str_offsets section - Introduced in DWARF5
     strx4 = 40,
+    /// A 1-byte unsigned index into a table of addresses in the .debug_addr section - Introduced in DWARF5
     addrx1 = 41,
+    /// A 2-byte unsigned index into a table of addresses in the .debug_addr section - Introduced in DWARF5
     addrx2 = 42,
+    /// A 3-byte unsigned index into a table of addresses in the .debug_addr section - Introduced in DWARF5
     addrx3 = 43,
+    /// A 4-byte unsigned index into a table of addresses in the .debug_addr section - Introduced in DWARF5
     addrx4 = 44,
 }
 
@@ -879,29 +933,70 @@ Array!EntryFormatPair readEntryFormat(ref const(ubyte)[] buffer) @nogc nothrow
     return pairs;
 }
 
-enum StandardOpcode : ubyte
+/// Standard opcodes of the line number program.
+///
+/// Standard opcodes occupy the range `[1, opcode_base)`, where `opcode_base`
+/// comes from the line number program header. Opcodes at or above it are
+/// special opcodes, which are not enumerated here.
+///
+/// See_Also: DWARF v5, Section 6.2.5.2: Standard Opcodes
+enum DW_LNS : ubyte
 {
+    /// Not a standard opcode: introduces an extended opcode (see `DW_LNE`)
     extendedOp = 0,
+    /// Append a row to the matrix, then reset `discriminator`,
+    /// `basic_block`, `prologue_end` and `epilogue_begin`
     copy = 1,
+    /// Advance `address` and `op_index` by a ULEB128 operation advance
     advancePC = 2,
+    /// Advance `line` by a SLEB128 operand
     advanceLine = 3,
+    /// Set `file` to a ULEB128 operand, an index into the `file_names`
+    /// table of the header - 1-based before DWARF5, 0-based since
     setFile = 4,
+    /// Set `column` to a ULEB128 operand
     setColumn = 5,
+    /// Toggle `is_stmt`
     negateStatement = 6,
+    /// Set `basic_block` to `true`
     setBasicBlock = 7,
+    /// Advance `address` and `op_index` as special opcode 255 would,
+    /// without changing `line` or appending a row
     constAddPC = 8,
+    /// Advance `address` by a 2-byte unsigned operand, not scaled by
+    /// `minimum_instruction_length`, and set `op_index` to 0
     fixedAdvancePC = 9,
+    /// Set `prologue_end` to `true`
     setPrologueEnd = 10,
+    /// Set `epilogue_begin` to `true`
     setEpilogueBegin = 11,
+    /// Set `isa` to a ULEB128 operand
     setISA = 12,
 }
 
-enum ExtendedOpcode : ubyte
+/// Extended opcodes of the line number program.
+///
+/// An extended opcode is encoded as a `0` byte, followed by a ULEB128 length,
+/// followed by the extended opcode itself and its operands. The length covers
+/// the extended opcode and its operands, so unknown opcodes can be skipped.
+///
+/// See_Also: DWARF v5, Section 6.2.5.3: Extended Opcodes
+enum DW_LNE : ubyte
 {
+    /// Set `end_sequence` to `true`, append a row to the matrix,
+    /// then reset all registers to their initial values
     endSequence = 1,
+    /// Set `address` to a target-address-sized operand and `op_index` to 0
     setAddress = 2,
+    /// Define an additional source file, using the same encoding as the
+    /// `file_names` entries of the header - Reserved since DWARF5
     defineFile = 3,
+    /// Set `discriminator` to a ULEB128 operand - Introduced in DWARF4
     setDiscriminator = 4,
+    /// First value of the range reserved for vendor extensions
+    loUser = 0x80,
+    /// Last value of the range reserved for vendor extensions
+    hiUser = 0xff,
 }
 
 struct StateMachine

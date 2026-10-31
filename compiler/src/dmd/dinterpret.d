@@ -115,7 +115,11 @@ public Expression ctfeInterpret(Expression e)
         result = CTFEExp.cantexp;
     }
     else
+    {
+        timeTraceBeginEvent(TimeTraceEventType.ctfeCopy);
+        scope (exit) timeTraceEndEvent(TimeTraceEventType.ctfeCopy, e);
         result = copyRegionExp(result);
+    }
 
     if (!CTFEExp.isCantExp(result))
         result = scrubReturnValue(e.loc, result);
@@ -1420,10 +1424,10 @@ Expression interpretStatement(UnionExp* pue, Statement s, InterState* istate)
         }
         if (istate.start == s)
             istate.start = null;
-        if (istate.start)
+
+        Expression e = interpretStatement(s._body, istate);
+        if (istate.start) // goto target is not in the body
         {
-            Expression e = null;
-            e = interpretStatement(pue, s._body, istate);
             foreach (ca; *s.catches)
             {
                 if (e || !istate.start) // goto target was found
@@ -1433,8 +1437,6 @@ Expression interpretStatement(UnionExp* pue, Statement s, InterState* istate)
             result = e;
             return;
         }
-
-        Expression e = interpretStatement(s._body, istate);
 
         // An exception was thrown
         if (e && e.isThrownExceptionExp())
@@ -1536,7 +1538,15 @@ Expression interpretStatement(UnionExp* pue, Statement s, InterState* istate)
             ex = bex;
         }
 
+        Statement target = istate.gotoTarget;
         Expression ey = interpretStatement(s.finalbody, istate);
+        while (CTFEExp.isGotoExp(ey))
+        {
+            istate.start = istate.gotoTarget;
+            istate.gotoTarget = null;
+            ey = interpretStatement(s.finalbody, istate);
+        }
+        istate.gotoTarget = target;
         if (CTFEExp.isCantExp(ey))
         {
             result = ey;
@@ -3696,7 +3706,17 @@ public:
 
         if (!isBlockAssignment)
         {
-            newval = ctfeCast(pue, e.loc, e.type, e.type, newval);
+            Type tval = e.type;
+
+            // Lazy variables are in fact delegates
+            if (auto ve = e1.isVarExp())
+            {
+                VarDeclaration v = ve.var.isVarDeclaration();
+                if (v.storage_class & STC.lazy_)
+                    tval = e.e2.type;
+            }
+
+            newval = ctfeCast(pue, e.loc, tval, tval, newval);
             if (exceptionOrCant(newval))
                 return;
             if (newval == pue.exp())
@@ -3707,7 +3727,7 @@ public:
                 result = e1;
             else
             {
-                result = ctfeCast(pue, e.loc, e.type, e.type, fp && post ? oldval : newval);
+                result = ctfeCast(pue, e.loc, tval, tval, fp && post ? oldval : newval);
                 if (result == pue.exp())
                     result = pue.copy();
             }
@@ -4031,7 +4051,7 @@ public:
             else if (auto se = e1.isStringExp())
             {
                 lowerbound = 0;
-                upperbound = se.len;
+                upperbound = se.length;
             }
             else if (e1.op == EXP.null_)
             {
@@ -5903,16 +5923,16 @@ public:
             if (se && se.hexString && se.postfix == StringExp.NoPostfix && e.to.nextOf().isIntegral)
             {
                 const sz = cast(size_t) e.to.nextOf().size;
-                if ((se.len % sz) != 0)
+                if ((se.length % sz) != 0)
                 {
                     eSink.error(e.loc, "hex string length %d must be a multiple of %d to cast to `%s`",
-                        cast(int) se.len, cast(int) sz, e.to.toErrMsg());
+                        cast(int) se.length, cast(int) sz, e.to.toErrMsg());
                     result = CTFEExp.cantexp;
                     return;
                 }
 
                 auto str = arrayCastBigEndian(se.peekData(), sz);
-                emplaceExp!(StringExp)(pue, e1.loc, str, se.len / sz, cast(ubyte) sz);
+                emplaceExp!(StringExp)(pue, e1.loc, str, se.length / sz, cast(ubyte) sz);
                 result = pue.exp();
                 result.type = e.to;
                 return;

@@ -40,6 +40,7 @@ import dmd.mtype;
 import dmd.opover;
 import dmd.optimize;
 import dmd.safe : setUnsafe;
+import dmd.semantic2;
 import dmd.statement;
 import dmd.target;
 import dmd.tokens;
@@ -551,7 +552,7 @@ Initializer initializerSemantic(Initializer init, Scope* sc, ref Type tx, NeedIn
             tb.isTypeSArray() && tb.isTypeSArray().isIncomplete())
         {
             StringExp se = i.exp.isStringExp();
-            auto ts = new TypeSArray(tb.nextOf(), new IntegerExp(Loc.initial, se.len + 1, Type.tsize_t));
+            auto ts = new TypeSArray(tb.nextOf(), new IntegerExp(Loc.initial, se.length + 1, Type.tsize_t));
             t = typeSemantic(ts, Loc.initial, sc);
             i.exp.type = t;
             tx = t;
@@ -1232,7 +1233,12 @@ Initializer initializerSemantic(Initializer init, Scope* sc, ref Type tx, NeedIn
     mixin VisitInitializer!Initializer visit;
     auto result = visit.VisitInitializer(init);
     result.semanticDone = true;
-    return (result !is null) ? result : new ErrorInitializer();
+
+    if (needInterpret)
+        if (auto ei = result.isExpInitializer())
+            lowerStaticAAs(ei.exp, sc);
+
+    return result;
 }
 
 /***********************

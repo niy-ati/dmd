@@ -1216,7 +1216,7 @@ bool expressionsToString(ref OutBuffer buf, Scope* sc, Expressions* exps,
 
         if (se && se.type.nextOf().ty.isSomeChar)
             buf.writestring(se.toUTF8(sc).peekString());
-        else if (!(se && se.len == 0)) // don't print empty array literal `[]`
+        else if (!(se && se.length == 0)) // don't print empty array literal `[]`
             buf.writestring(e4.toString());
     }
     return false;
@@ -1478,6 +1478,32 @@ private Expression incompatibleTypes(UnaExp e)
         eSink.error(e.loc, "incompatible type for `%s(%s)`: `%s`", EXPtoString(e.op).ptr, e.e1.toErrMsg(), e.e1.type.toErrMsg());
     }
     return ErrorExp.get();
+}
+
+/********************************
+ * Semantic shared by the unary arithmetic operators `-e`, `+e` and `~e`:
+ * operator overloading, array operations and vector support.
+ * Sets `e.type` to the type of `e.e1`.
+ * Params:
+ *  e = the unary expression
+ *  sc = scope
+ * Returns:
+ *  the resulting expression, or `null` if `e` still needs
+ *  the operand checks of its operator
+ */
+private Expression unaArithSemantic(UnaExp e, Scope* sc)
+{
+    if (Expression ex = e.opOverloadUnary(sc))
+        return ex;
+
+    fix16997(sc, e);
+    e.type = e.e1.type;
+    Type tb = e.type.toBasetype();
+    if (tb.isStaticOrDynamicArray())
+        return isArrayOpValid(e.e1) ? e : arrayOpInvalidError(e);
+    if (!target.isVectorOpSupported(tb, e.op))
+        return e.incompatibleTypes();
+    return null;
 }
 
 /********************************
@@ -6065,16 +6091,16 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
                     e.sz = 1;
                     break;
             }
-            if ((e.len % e.sz) != 0)
+            if ((e.length % e.sz) != 0)
                 eSink.error(e.loc, "hex string with `%s` type needs to be multiple of %d bytes, not %d",
-                    e.type.toErrMsg(), e.sz, cast(int) e.len);
+                    e.type.toErrMsg(), e.sz, cast(int) e.length);
 
-            e.setData(arrayCastBigEndian(e.peekData(), e.sz).ptr, e.len / e.sz, e.sz);
+            e.setData(arrayCastBigEndian(e.peekData(), e.sz).ptr, e.length / e.sz, e.sz);
         }
         else switch (e.postfix)
         {
         case 'd':
-            for (u = 0; u < e.len;)
+            for (u = 0; u < e.length;)
             {
                 if (const p = utf_decodeChar(e.peekString(), u, c))
                 {
@@ -6090,14 +6116,14 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
             buffer.write4(0);
             e.setData(buffer.extractData(), newlen, 4);
             if (!e.cMacro && sc && sc.inCfile)
-                e.type = Type.tuns32.sarrayOf(e.len + 1);
+                e.type = Type.tuns32.sarrayOf(e.length + 1);
             else
                 e.type = Type.tdchar.immutableOf().arrayOf();
             e.committed = true;
             break;
 
         case 'w':
-            for (u = 0; u < e.len;)
+            for (u = 0; u < e.length;)
             {
                 if (const p = utf_decodeChar(e.peekString(), u, c))
                 {
@@ -6115,7 +6141,7 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
             buffer.writeUTF16(0);
             e.setData(buffer.extractData(), newlen, 2);
             if (!e.cMacro && sc && sc.inCfile)
-                e.type = Type.tuns16.sarrayOf(e.len + 1);
+                e.type = Type.tuns16.sarrayOf(e.length + 1);
             else
                 e.type = Type.twchar.immutableOf().arrayOf();
             e.committed = true;
@@ -6127,7 +6153,7 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
 
         default:
             if (!e.cMacro && sc && sc.inCfile)
-                e.type = Type.tchar.sarrayOf(e.len + 1);
+                e.type = Type.tchar.sarrayOf(e.length + 1);
             else
                 e.type = Type.tchar.immutableOf().arrayOf();
             break;
@@ -6990,8 +7016,6 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
                             continue;
                         v.inuse++;
                         v._init = v._init.initializerSemantic(v._scope, v.type, INITinterpret, global.errorSink);
-                        import dmd.semantic2 : lowerStaticAAs;
-                        lowerStaticAAs(v, sc);
                         v.inuse--;
                     }
                 }
@@ -10022,6 +10046,15 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
             auto ec = CallExp.create(loc, dt, es);
             exp.msg = ec;
         }
+        else if (!exp.msg &&
+                 sc.needsCodegen() &&
+                 global.params.checkAction == CHECKACTION.C &&
+                 global.params.useAssert == CHECKENABLE.on)
+        {
+            // Set condition as message, before semantic/inlining rewrite it
+            // (https://github.com/dlang/dmd/issues/18075)
+            exp.msg = new StringExp(Loc.initial, exp.e1.toString());
+        }
 
         LSkip:
         if (Expression ex = unaSemantic(exp, sc))
@@ -10816,28 +10849,9 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
             printf("NegExp::semantic('%s')\n", exp.toErrMsg());
         }
 
-        if (Expression e = exp.opOverloadUnary(sc))
+        if (Expression e = unaArithSemantic(exp, sc))
         {
             result = e;
-            return;
-        }
-
-        fix16997(sc, exp);
-        exp.type = exp.e1.type;
-        Type tb = exp.type.toBasetype();
-        if (tb.isStaticOrDynamicArray())
-        {
-            if (!isArrayOpValid(exp.e1))
-            {
-                result = arrayOpInvalidError(exp);
-                return;
-            }
-            result = exp;
-            return;
-        }
-        if (!target.isVectorOpSupported(tb, exp.op))
-        {
-            result = exp.incompatibleTypes();
             return;
         }
         if (exp.e1.checkNoBool() ||
@@ -10855,31 +10869,11 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
             printf("UAddExp::semantic('%s')\n", exp.toErrMsg());
         }
 
-        if (Expression e = exp.opOverloadUnary(sc))
+        if (Expression e = unaArithSemantic(exp, sc))
         {
             result = e;
             return;
         }
-
-        fix16997(sc, exp);
-        Type tb = exp.e1.type.toBasetype();
-        if (tb.isStaticOrDynamicArray())
-        {
-            if (!isArrayOpValid(exp.e1))
-            {
-                result = arrayOpInvalidError(exp);
-                return;
-            }
-            exp.type = exp.e1.type;
-            result = exp;
-            return;
-        }
-        if (!target.isVectorOpSupported(tb, exp.op))
-        {
-            result = exp.incompatibleTypes();
-            return;
-        }
-
         if (exp.e1.checkNoBool() ||
             exp.e1.checkArithmetic(exp.op) ||
             exp.e1.checkSharedAccess(sc))
@@ -10891,28 +10885,9 @@ private extern (C++) final class ExpressionSemanticVisitor : Visitor
     override void visit(ComExp exp)
     {
 
-        if (Expression e = exp.opOverloadUnary(sc))
+        if (Expression e = unaArithSemantic(exp, sc))
         {
             result = e;
-            return;
-        }
-
-        fix16997(sc, exp);
-        exp.type = exp.e1.type;
-        Type tb = exp.type.toBasetype();
-        if (tb.isStaticOrDynamicArray())
-        {
-            if (!isArrayOpValid(exp.e1))
-            {
-                result = arrayOpInvalidError(exp);
-                return;
-            }
-            result = exp;
-            return;
-        }
-        if (!target.isVectorOpSupported(tb, exp.op))
-        {
-            result = exp.incompatibleTypes();
             return;
         }
         if (exp.e1.checkNoBool() ||
@@ -19174,8 +19149,6 @@ Expression getConstInitializer(VarDeclaration vd, bool needFullType = true)
     {
         vd.inuse++;
         vd._init = vd._init.initializerSemantic(vd._scope, vd.type, INITinterpret, global.errorSink);
-        import dmd.semantic2 : lowerStaticAAs;
-        lowerStaticAAs(vd, vd._scope);
         vd._scope = null;
         vd.inuse--;
     }

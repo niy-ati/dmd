@@ -7255,7 +7255,7 @@ elem* toElemStructLit(StructLiteralExp sle, ref IRState irs, EXP op, Symbol* sym
                 /* Initialize entire location the bitfield is in
                  * ep = (ep & ((1 << bf.fieldWidth) - 1)) << bf.bitOffset
                  */
-                auto ex = el_bin(OPand, tym, ep, el_long(tym, (1L << bf.fieldWidth) - 1));
+                auto ex = el_bin(OPand, tym, ep, el_long(tym, ~0UL >> (64 - bf.fieldWidth)));
                 ep = el_bin(OPshl, tym, ex, el_long(tym, bitOffset));
                 vbf = v;
             }
@@ -7639,11 +7639,15 @@ elem* callCAssert(ref IRState irs, Loc loc, Expression exp, Expression emsg, con
     auto eline = el_long(TYint, loc.linnum);
 
     elem* ea;
-    if (irs.target.os == Target.OS.OSX)
+    if (irs.target.os == Target.OS.OSX ||
+        irs.target.os == Target.OS.FreeBSD ||
+        irs.target.os == Target.OS.DragonFlyBSD)
     {
         // __assert_rtn(func, file, line, msg);
+        // __assert(func, file, line, failedexpr);
         elem* efunc = getFuncName();
-        auto eassert = el_var(getRtlsym(RTLSYM.C__ASSERT_RTN));
+        const rtlsym = (irs.target.os == Target.OS.OSX) ? RTLSYM.C__ASSERT_RTN : RTLSYM.C__ASSERT;
+        auto eassert = el_var(getRtlsym(rtlsym));
         ea = el_bin(OPcall, TYvoid, eassert, el_params(elmsg, eline, efilename, efunc, null));
         return ea;
     }
