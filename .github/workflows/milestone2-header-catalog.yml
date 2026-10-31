@@ -226,7 +226,16 @@ jobs:
           # is compile-only (-c): schannel.c is one translation unit out of
           # curl's full library and has no main of its own, so a link test
           # would require building the entire library, out of scope here.
-          "$DMD_BIN" -c "-P=-Icurl_src/lib" "-P=-Icurl_src/include" "-P=-D_MSC_VER=1800" curl_src/lib/vtls/schannel.c 2>&1 | tee -a curl_catalog.log
+          #
+          # USE_SCHANNEL/USE_WINDOWS_SSPI/BUILDING_LIBCURL match what curl's
+          # own CMake build sets for this file (CMakeLists.txt sets the first
+          # two when Schannel is the chosen TLS backend, lib/CMakeLists.txt
+          # sets the third for every library source). Without them the whole
+          # body of schannel.c is '#ifdef USE_SCHANNEL'-gated out and the
+          # probe would silently compile nothing.
+          MSVC_BUILTINS_H=$(find druntime -iname 'importc_msvc_builtins.h' | head -1)
+          WMSVC_BUILTINS_H=$(cd "$(dirname "$MSVC_BUILTINS_H")" && pwd -W 2>/dev/null || pwd)/$(basename "$MSVC_BUILTINS_H")
+          "$DMD_BIN" -c "-P=-Icurl_src/lib" "-P=-Icurl_src/include" "-P=-D_MSC_VER=1800" "-P=-DUSE_SCHANNEL" "-P=-DUSE_WINDOWS_SSPI" "-P=-DBUILDING_LIBCURL" "-P=-FI\"$WMSVC_BUILTINS_H\"" curl_src/lib/vtls/schannel.c 2>&1 | tee -a curl_catalog.log
 
       - name: Print catalog summary
         if: always()
