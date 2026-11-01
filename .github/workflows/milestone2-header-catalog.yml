@@ -213,15 +213,12 @@ jobs:
           # way sqlite's own docs say to: SQLITE_OMIT_SEH. Falls back to
           # sqlite's plain, non-SEH WAL handling.
           echo "=== RtlSecureZeroMemory declaration in real Windows SDK headers ===" >> sqlite_catalog.log
+          set +e
           SDK_INC=$(find "/c/Program Files (x86)/Windows Kits/10/Include" -maxdepth 1 -type d -iname '10.*' 2>&1 | head -1)
           echo "SDK_INC=$SDK_INC" >> sqlite_catalog.log
-          grep -rn "RtlSecureZeroMemory\|RtlFillVolatileMemory\|RtlSetVolatileMemory" "$SDK_INC" 2>&1 | head -20 >> sqlite_catalog.log
-          echo "=== pragma intrinsic for volatile memory funcs ===" >> sqlite_catalog.log
-          grep -n "pragma intrinsic.*Volatile\|FORCEINLINE$" "$SDK_INC/um/winnt.h" 2>&1 | grep -i "volatile\|^.*:[0-9]*:#define FORCEINLINE\|^.*:[0-9]*:FORCEINLINE" | head -5 >> sqlite_catalog.log
-          grep -n "define FORCEINLINE" "$SDK_INC/shared/"*.h "$SDK_INC/um/"*.h 2>&1 | head -5 >> sqlite_catalog.log
-          grep -n "RtlSetVolatileMemory\|RtlCopyVolatileMemory\|RtlMoveVolatileMemory" "$SDK_INC/um/winnt.h" 2>&1 >> sqlite_catalog.log
-          sed -n '24030,24045p' "$SDK_INC/um/winnt.h" >> sqlite_catalog.log 2>&1
-          set +e
+          grep -n "pragma intrinsic" "$SDK_INC/um/winnt.h" > pragma_intrinsic.log 2>&1
+          grep -i "volatile" pragma_intrinsic.log >> sqlite_catalog.log
+          echo "pragma_intrinsic_line_count: $(wc -l < pragma_intrinsic.log)" >> sqlite_catalog.log
           "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe > dmd_sqlite_out.log 2>&1
           cat dmd_sqlite_out.log >> sqlite_catalog.log
           set -e
