@@ -2672,7 +2672,9 @@ private extern (C++) final class ImportCInlineUsageVisitor : SemanticTimeTransit
     private bool[FuncDeclaration] isCandidate;
     private FuncDeclaration[]* worklist;
 
-    this(bool[FuncDeclaration] isCandidate, FuncDeclaration[]* worklist)
+    // extern (D): the class's own extern(C++) linkage would otherwise
+    // apply here too, and neither parameter type has a C++ ABI mapping.
+    extern (D) this(bool[FuncDeclaration] isCandidate, FuncDeclaration[]* worklist)
     {
         this.isCandidate = isCandidate;
         this.worklist = worklist;
