@@ -212,16 +212,7 @@ jobs:
           # time it reaches a catchable D exception), so omit it the same
           # way sqlite's own docs say to: SQLITE_OMIT_SEH. Falls back to
           # sqlite's plain, non-SEH WAL handling.
-          echo "=== RtlSecureZeroMemory declaration in real Windows SDK headers ===" >> sqlite_catalog.log
-          set +e
-          SDK_INC=$(find "/c/Program Files (x86)/Windows Kits/10/Include" -maxdepth 1 -type d -iname '10.*' 2>&1 | head -1)
-          grep -n "define FORCEINLINE" "$SDK_INC/shared/"*.h "$SDK_INC/um/"*.h 2>/dev/null >> sqlite_catalog.log
-          echo "--- -v output around Rtl/Volatile symbols ---" >> sqlite_catalog.log
-          "$DMD_BIN" -c -v "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" > dmd_v_out.log 2>&1
-          grep -n -i -B3 "RtlZeroVolatileMemory\|RtlFillVolatileMemory\|RtlSecureZeroMemory2\|RtlSecureZeroMemory\b" dmd_v_out.log >> sqlite_catalog.log
-          "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe > dmd_sqlite_out.log 2>&1
-          cat dmd_sqlite_out.log >> sqlite_catalog.log
-          set -e
+          "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe 2>&1 | tee -a sqlite_catalog.log
           if [ -f sqlite_probe.exe ]; then
             echo "RESULT: linked successfully" >> sqlite_catalog.log
             ./sqlite_probe.exe && echo "RESULT: ran successfully, exit 0" >> sqlite_catalog.log || echo "RESULT: ran but exited nonzero" >> sqlite_catalog.log

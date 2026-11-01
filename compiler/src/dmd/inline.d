@@ -2595,9 +2595,42 @@ public void scanImportCInlineUsage(Modules* modules)
     if (!candidates.length)
         return;
 
+    bool[FuncDeclaration] isCandidate;
+    foreach (fd; candidates)
+        isCandidate[fd] = true;
+
     scope v = new ImportCInlineUsageVisitor();
+
+    // Seed from everything that isn't itself one of the candidates - only
+    // genuinely-reachable code can prove a candidate is actually used.
+    // A candidate's own body is scanned separately below, since otherwise
+    // two candidates that only call each other (and are never called from
+    // anywhere else) would each "vouch" for the other and both would
+    // wrongly survive, as happened with windows.h's RtlZeroVolatileMemory
+    // and RtlFillVolatileMemory, neither of which anything else calls.
     foreach (m; *modules)
-        visitDsymbolTree(m, v);
+        visitDsymbolTree(m, v, isCandidate);
+
+    // Propagate from each candidate confirmed referenced to whatever its
+    // own body calls, repeating until nothing new turns up, so a chain of
+    // candidates is only kept alive by a path that's rooted outside the
+    // candidate set entirely.
+    bool[FuncDeclaration] scanned;
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        foreach (fd; candidates)
+        {
+            if (fd.importCInlineReferenced && fd !in scanned)
+            {
+                scanned[fd] = true;
+                if (fd.fbody)
+                    fd.fbody.accept(v);
+                changed = true;
+            }
+        }
+    }
 
     foreach (fd; candidates)
         if (!fd.importCInlineReferenced)
@@ -2606,11 +2639,12 @@ public void scanImportCInlineUsage(Modules* modules)
 
 /// Walk a Dsymbol tree, visiting every function body and variable
 /// initializer with v, recursing into anything that can hold either.
-private void visitDsymbolTree(Dsymbol s, ImportCInlineUsageVisitor v)
+/// A candidate's own body is skipped here - see scanImportCInlineUsage.
+private void visitDsymbolTree(Dsymbol s, ImportCInlineUsageVisitor v, bool[FuncDeclaration] isCandidate)
 {
     if (auto fd = s.isFuncDeclaration())
     {
-        if (fd.fbody)
+        if (fd.fbody && fd !in isCandidate)
             fd.fbody.accept(v);
         return;
     }
@@ -2624,14 +2658,14 @@ private void visitDsymbolTree(Dsymbol s, ImportCInlineUsageVisitor v)
     {
         if (ad.decl)
             foreach (s2; *ad.decl)
-                visitDsymbolTree(s2, v);
+                visitDsymbolTree(s2, v, isCandidate);
         return;
     }
     if (auto sds = s.isScopeDsymbol())
     {
         if (sds.members)
             foreach (s2; *sds.members)
-                visitDsymbolTree(s2, v);
+                visitDsymbolTree(s2, v, isCandidate);
         return;
     }
 }
