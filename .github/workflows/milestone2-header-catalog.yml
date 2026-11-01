@@ -215,8 +215,14 @@ jobs:
           echo "=== RtlSecureZeroMemory declaration in real Windows SDK headers ===" >> sqlite_catalog.log
           set +e
           SDK_LIB=$(find "/c/Program Files (x86)/Windows Kits/10/Lib" -maxdepth 1 -type d -iname '10.*' 2>&1 | head -1)
-          echo "SDK_LIB=$SDK_LIB" >> sqlite_catalog.log
-          ls "$SDK_LIB/um/x64/" 2>&1 | grep -i "ntdll\|onecore" >> sqlite_catalog.log
+          DUMPBIN=$(find "/c/Program Files/Microsoft Visual Studio" -iname 'dumpbin.exe' -path '*Hostx64/x64*' 2>&1 | head -1)
+          echo "DUMPBIN=$DUMPBIN" >> sqlite_catalog.log
+          for LIB in ntdll.lib OneCore.lib OneCoreUAP.lib OneCore_apiset.lib OneCoreUAP_apiset.lib kernel32.lib; do
+            MATCH=$("$DUMPBIN" /exports "$SDK_LIB/um/x64/$LIB" 2>&1 | grep -i "RtlSetVolatileMemory")
+            if [ -n "$MATCH" ]; then
+              echo "FOUND in $LIB: $MATCH" >> sqlite_catalog.log
+            fi
+          done
           "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c "-L/DEFAULTLIB:ntdll.lib" -of=sqlite_probe.exe > dmd_sqlite_out.log 2>&1
           cat dmd_sqlite_out.log >> sqlite_catalog.log
           set -e
