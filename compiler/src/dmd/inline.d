@@ -2599,7 +2599,11 @@ public void scanImportCInlineUsage(Modules* modules)
     foreach (fd; candidates)
         isCandidate[fd] = true;
 
-    scope v = new ImportCInlineUsageVisitor();
+    // Candidates confirmed referenced but not yet scanned themselves -
+    // scanning a candidate's body may confirm further candidates in turn,
+    // which mark() (below) pushes onto this same worklist as it finds them.
+    FuncDeclaration[] worklist;
+    scope v = new ImportCInlineUsageVisitor(isCandidate, &worklist);
 
     // Seed from everything that isn't itself one of the candidates - only
     // genuinely-reachable code can prove a candidate is actually used.
@@ -2611,25 +2615,16 @@ public void scanImportCInlineUsage(Modules* modules)
     foreach (m; *modules)
         visitDsymbolTree(m, v, isCandidate);
 
-    // Propagate from each candidate confirmed referenced to whatever its
-    // own body calls, repeating until nothing new turns up, so a chain of
-    // candidates is only kept alive by a path that's rooted outside the
-    // candidate set entirely.
-    bool[FuncDeclaration] scanned;
-    bool changed = true;
-    while (changed)
+    // Each candidate the seed pass (or a later iteration of this loop)
+    // just confirmed reachable gets its own body scanned too, so a chain
+    // of candidates is only kept alive by a path rooted outside the
+    // candidate set entirely, never by candidates vouching for each other.
+    while (worklist.length)
     {
-        changed = false;
-        foreach (fd; candidates)
-        {
-            if (fd.importCInlineReferenced && fd !in scanned)
-            {
-                scanned[fd] = true;
-                if (fd.fbody)
-                    fd.fbody.accept(v);
-                changed = true;
-            }
-        }
+        FuncDeclaration fd = worklist[$ - 1];
+        worklist = worklist[0 .. $ - 1];
+        if (fd.fbody)
+            fd.fbody.accept(v);
     }
 
     foreach (fd; candidates)
@@ -2674,6 +2669,15 @@ private extern (C++) final class ImportCInlineUsageVisitor : SemanticTimeTransit
 {
     alias visit = SemanticTimeTransitiveVisitor.visit;
 
+    private bool[FuncDeclaration] isCandidate;
+    private FuncDeclaration[]* worklist;
+
+    this(bool[FuncDeclaration] isCandidate, FuncDeclaration[]* worklist)
+    {
+        this.isCandidate = isCandidate;
+        this.worklist = worklist;
+    }
+
     // VarExp/SymOffExp have no dedicated override point in this visitor
     // hierarchy, so this catches them (and everything else) via their
     // common Expression base instead.
@@ -2698,7 +2702,11 @@ private extern (C++) final class ImportCInlineUsageVisitor : SemanticTimeTransit
 
     private void mark(Declaration d)
     {
-        if (auto fd = d.isFuncDeclaration())
-            fd.importCInlineReferenced = true;
+        auto fd = d.isFuncDeclaration();
+        if (!fd || fd.importCInlineReferenced)
+            return;
+        fd.importCInlineReferenced = true;
+        if (fd in isCandidate)
+            *worklist ~= fd;
     }
 }
