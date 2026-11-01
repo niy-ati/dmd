@@ -214,12 +214,10 @@ jobs:
           # sqlite's plain, non-SEH WAL handling.
           echo "=== RtlSecureZeroMemory declaration in real Windows SDK headers ===" >> sqlite_catalog.log
           set +e
-          SDK_INC=$(find "/c/Program Files (x86)/Windows Kits/10/Include" -maxdepth 1 -type d -iname '10.*' 2>&1 | head -1)
-          echo "SDK_INC=$SDK_INC" >> sqlite_catalog.log
-          grep -n "pragma intrinsic" "$SDK_INC/um/winnt.h" > pragma_intrinsic.log 2>&1
-          grep -i "volatile" pragma_intrinsic.log >> sqlite_catalog.log
-          echo "pragma_intrinsic_line_count: $(wc -l < pragma_intrinsic.log)" >> sqlite_catalog.log
-          "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe > dmd_sqlite_out.log 2>&1
+          SDK_LIB=$(find "/c/Program Files (x86)/Windows Kits/10/Lib" -maxdepth 1 -type d -iname '10.*' 2>&1 | head -1)
+          echo "SDK_LIB=$SDK_LIB" >> sqlite_catalog.log
+          ls "$SDK_LIB/um/x64/" 2>&1 | grep -i "ntdll\|onecore" >> sqlite_catalog.log
+          "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c "-L/DEFAULTLIB:ntdll.lib" -of=sqlite_probe.exe > dmd_sqlite_out.log 2>&1
           cat dmd_sqlite_out.log >> sqlite_catalog.log
           set -e
           if [ -f sqlite_probe.exe ]; then
