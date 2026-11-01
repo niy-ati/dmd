@@ -214,16 +214,12 @@ jobs:
           # sqlite's plain, non-SEH WAL handling.
           echo "=== RtlSecureZeroMemory declaration in real Windows SDK headers ===" >> sqlite_catalog.log
           set +e
-          SDK_LIB=$(find "/c/Program Files (x86)/Windows Kits/10/Lib" -maxdepth 1 -type d -iname '10.*' 2>&1 | head -1)
-          DUMPBIN=$(find "/c/Program Files/Microsoft Visual Studio" -iname 'dumpbin.exe' -path '*Hostx64/x64*' 2>&1 | head -1)
-          echo "DUMPBIN=$DUMPBIN" >> sqlite_catalog.log
-          for LIB in ntdll.lib OneCore.lib OneCoreUAP.lib OneCore_apiset.lib OneCoreUAP_apiset.lib kernel32.lib; do
-            MATCH=$("$DUMPBIN" /exports "$SDK_LIB/um/x64/$LIB" 2>&1 | grep -i "RtlSetVolatileMemory")
-            if [ -n "$MATCH" ]; then
-              echo "FOUND in $LIB: $MATCH" >> sqlite_catalog.log
-            fi
-          done
-          "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c "-L/DEFAULTLIB:ntdll.lib" -of=sqlite_probe.exe > dmd_sqlite_out.log 2>&1
+          SDK_INC=$(find "/c/Program Files (x86)/Windows Kits/10/Include" -maxdepth 1 -type d -iname '10.*' 2>&1 | head -1)
+          grep -n "define FORCEINLINE" "$SDK_INC/shared/"*.h "$SDK_INC/um/"*.h 2>/dev/null >> sqlite_catalog.log
+          echo "--- -v output around Rtl/Volatile symbols ---" >> sqlite_catalog.log
+          "$DMD_BIN" -c -v "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" > dmd_v_out.log 2>&1
+          grep -i "volatile\|RtlSetVolatileMemory\|RtlFillVolatileMemory\|RtlSecureZeroMemory" dmd_v_out.log >> sqlite_catalog.log
+          "$DMD_BIN" "-P=-I$WAMAL" "-P=-FI\"$WMSVC_BUILTINS_H\"" "-P=-DSQLITE_OMIT_SEH" -I"$AMAL_DIR" "$AMAL_DIR/sqlite3.c" sqlite_main.c -of=sqlite_probe.exe > dmd_sqlite_out.log 2>&1
           cat dmd_sqlite_out.log >> sqlite_catalog.log
           set -e
           if [ -f sqlite_probe.exe ]; then
