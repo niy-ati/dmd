@@ -184,6 +184,13 @@ jobs:
             fi
           fi
 
+      - name: 'Check for volatileaccessu.lib'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          find "/c/Program Files (x86)/Windows Kits/10/Lib" -iname 'volatileaccessu.lib' 2>&1 || echo "NOT FOUND"
+          find "/c/Program Files (x86)/Windows Kits/10/Lib" -iname 'volatileaccess*' 2>&1 || echo "NOT FOUND (wildcard)"
+
       - name: 'Catalog: real sqlite amalgamation through ImportC - full compile and link'
         if: runner.os == 'Windows'
         continue-on-error: true
