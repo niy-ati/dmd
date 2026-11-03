@@ -2,19 +2,14 @@
 // DISABLED: win64
 // Verifies __try/__except/__finally, lowered to try/catch/finally.
 //
-// Disabled on win64: when dmd itself is bootstrapped with LDC (CI's
-// "Windows x64, LDC" job), the resulting dmd.exe emits a wrong filter-check
-// stub for __except's condition - confirmed via a local repro built the
-// same way CI does (dmd.exe self-built with the real LDC 1.43.0 release),
-// the crash dump shows the exception dispatcher jumping straight into a
-// 2-byte `hlt; ret` stub that is registered as its own function in the
-// PE unwind table (dumpbin /unwindinfo), in place of the real filter body.
-// dmd's own backend does not use __CxxFrameHandler3 at all for this (every
-// unwind entry in the binary has no EH handler flag set; that mechanism is
-// only used when LDC itself compiles D code, not by dmd's native backend),
-// so this is LDC miscompiling a routine in dmd's own backend source during
-// the bootstrap build, not an ImportC or frontend bug. No fix is possible
-// in this repo; needs a fix in LDC itself.
+// Disabled on win64: when dmd is bootstrapped with LDC as host compiler
+// (CI's "Windows x64, LDC" job), the resulting dmd.exe crashes running
+// this - reproduced locally with the real LDC 1.43.0 release matching CI.
+// The crash dump shows execution landing on a 2-byte `hlt` stub that is
+// registered as its own function in the PE unwind table, not on real
+// code. Bootstrapping with any other host compiler produces a dmd.exe
+// that runs this correctly, so this is LDC miscompiling something in
+// dmd's own backend during the bootstrap build, not a frontend bug.
 
 __import importc_seh;
 
