@@ -95,6 +95,25 @@ jobs:
             echo "RESULT: failed to link" >> windows_h_catalog.log
           fi
 
+      - name: 'Verify: GetTickCount matches a real cl.exe build'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          echo "=== native cl.exe vs ImportC: GetTickCount() through real windows.h ===" > windows_h_compare.log
+          cl /nologo probe_windows_h.c /Fe:native_windows_h.exe >> windows_h_compare.log 2>&1
+          DUMPBIN=$(find "/c/Program Files/Microsoft Visual Studio" -iname 'dumpbin.exe' -path '*Hostx64/x64*' | head -1)
+          IMPORTC_IMPORTS_GETTICKCOUNT=no
+          NATIVE_IMPORTS_GETTICKCOUNT=no
+          "$DUMPBIN" /imports probe_windows_h.exe 2>/dev/null | grep -qi GetTickCount && IMPORTC_IMPORTS_GETTICKCOUNT=yes
+          "$DUMPBIN" /imports native_windows_h.exe 2>/dev/null | grep -qi GetTickCount && NATIVE_IMPORTS_GETTICKCOUNT=yes
+          echo "ImportC binary imports real kernel32 GetTickCount: $IMPORTC_IMPORTS_GETTICKCOUNT" >> windows_h_compare.log
+          echo "native binary imports real kernel32 GetTickCount: $NATIVE_IMPORTS_GETTICKCOUNT" >> windows_h_compare.log
+          if [ "$IMPORTC_IMPORTS_GETTICKCOUNT" == "yes" ] && [ "$NATIVE_IMPORTS_GETTICKCOUNT" == "yes" ]; then
+            echo "RESULT: both call the real kernel32 GetTickCount, not a stub" >> windows_h_compare.log
+          else
+            echo "RESULT: mismatch, ImportC isn't calling the real system function" >> windows_h_compare.log
+          fi
+
       - name: 'Catalog: real MSVC intrinsics via windows.h, unreferenced forceinline wrappers (issue 20270 root cause)'
         if: runner.os == 'Windows'
         continue-on-error: true
@@ -143,8 +162,10 @@ jobs:
         run: |
           cat > probe_zlib_h.c << 'EOF'
           #include <zlib.h>
+          #include <stdio.h>
           int main(void) {
               const char *v = zlibVersion();
+              if (v) printf("%s", v);
               return v ? 0 : 1;
           }
           EOF
@@ -184,6 +205,29 @@ jobs:
             fi
           fi
 
+      - name: 'Verify: zlibVersion() output matches a real cl.exe build byte for byte'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          echo "=== native cl.exe vs ImportC: zlibVersion() through real zlib.h ===" > zlib_compare.log
+          ZLIB_H=$(find /c/vcpkg/installed -iname 'zlib.h' | head -1)
+          MANIFEST=$(find /c/vcpkg/installed -iname 'zlib_*.list' | head -1)
+          ZLIB_REL=$(grep -iE '\.lib$' "$MANIFEST" | grep -iv debug | head -1)
+          ZLIB="/c/vcpkg/installed/$ZLIB_REL"
+          ZINC="${ZLIB_H%/*}"
+          WINC="${ZINC/\/c\//C:/}"
+          WLIB="${ZLIB/\/c\//C:/}"
+          cl /nologo "/I$WINC" probe_zlib_h.c "$WLIB" /Fe:native_zlib_h.exe >> zlib_compare.log 2>&1
+          IMPORTC_OUT=$(./probe_zlib_h.exe 2>&1 || true)
+          NATIVE_OUT=$(./native_zlib_h.exe 2>&1 || true)
+          echo "ImportC output: $IMPORTC_OUT" >> zlib_compare.log
+          echo "native output:  $NATIVE_OUT" >> zlib_compare.log
+          if [ -n "$IMPORTC_OUT" ] && [ "$IMPORTC_OUT" == "$NATIVE_OUT" ]; then
+            echo "RESULT: byte-for-byte identical" >> zlib_compare.log
+          else
+            echo "RESULT: mismatch" >> zlib_compare.log
+          fi
+
       - name: 'Check for volatileaccessu.lib'
         if: runner.os == 'Windows'
         continue-on-error: true
@@ -203,9 +247,20 @@ jobs:
           AMAL_DIR=$(find . -maxdepth 1 -iname 'sqlite-amalgamation-*' -type d | head -1)
           cat > sqlite_main.c << 'EOF'
           #include "sqlite3.h"
+          #include <stdio.h>
           int main(void) {
               const char *v = sqlite3_libversion();
-              return v ? 0 : 1;
+              if (!v) return 1;
+              sqlite3 *db;
+              if (sqlite3_open(":memory:", &db) != SQLITE_OK) return 1;
+              if (sqlite3_exec(db, "CREATE TABLE t(x INTEGER); INSERT INTO t VALUES (42);", 0, 0, 0) != SQLITE_OK) return 1;
+              sqlite3_stmt *stmt;
+              sqlite3_prepare_v2(db, "SELECT x FROM t", -1, &stmt, 0);
+              int result = (sqlite3_step(stmt) == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
+              sqlite3_finalize(stmt);
+              sqlite3_close(db);
+              printf("%s|%d", v, result);
+              return 0;
           }
           EOF
           WAMAL=$(cd "$AMAL_DIR" && pwd -W 2>/dev/null || pwd)
@@ -227,6 +282,23 @@ jobs:
             ./sqlite_probe.exe && echo "RESULT: ran successfully, exit 0" >> sqlite_catalog.log || echo "RESULT: ran but exited nonzero" >> sqlite_catalog.log
           else
             echo "RESULT: failed to link" >> sqlite_catalog.log
+          fi
+
+      - name: 'Verify: sqlite version and a real create/insert/select round trip match a native cl.exe build'
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: |
+          echo "=== native cl.exe vs ImportC: sqlite3_libversion() + CREATE/INSERT/SELECT round trip ===" > sqlite_compare.log
+          AMAL_DIR=$(find . -maxdepth 1 -iname 'sqlite-amalgamation-*' -type d | head -1)
+          cl /nologo "/I$AMAL_DIR" sqlite_main.c "$AMAL_DIR/sqlite3.c" /Fe:native_sqlite.exe >> sqlite_compare.log 2>&1
+          IMPORTC_OUT=$(./sqlite_probe.exe 2>&1 || true)
+          NATIVE_OUT=$(./native_sqlite.exe 2>&1 || true)
+          echo "ImportC output: $IMPORTC_OUT" >> sqlite_compare.log
+          echo "native output:  $NATIVE_OUT" >> sqlite_compare.log
+          if [ -n "$IMPORTC_OUT" ] && [ "$IMPORTC_OUT" == "$NATIVE_OUT" ]; then
+            echo "RESULT: byte-for-byte identical, including the round-trip query result" >> sqlite_compare.log
+          else
+            echo "RESULT: mismatch" >> sqlite_compare.log
           fi
 
       - name: 'Catalog: real sqlite amalgamation through ImportC (Linux)'
@@ -285,12 +357,16 @@ jobs:
           MSVC_BUILTINS_H=$(find druntime -iname 'importc_msvc_builtins.h' | head -1)
           WMSVC_BUILTINS_H=$(cd "$(dirname "$MSVC_BUILTINS_H")" && pwd -W 2>/dev/null || pwd)/$(basename "$MSVC_BUILTINS_H")
           "$DMD_BIN" -c "-P=-Icurl_src/lib" "-P=-Icurl_src/include" "-P=-D_MSC_VER=1800" "-P=-DUSE_SCHANNEL" "-P=-DUSE_WINDOWS_SSPI" "-P=-DBUILDING_LIBCURL" "-P=-FI\"$WMSVC_BUILTINS_H\"" curl_src/lib/vtls/schannel.c 2>&1 | tee -a curl_catalog.log
-          echo "result: clean compile, no ImportC gaps in curl's real Windows TLS backend" >> curl_catalog.log
+          if [ -f schannel.obj ]; then
+            echo "RESULT: compiled clean, no ImportC gaps in curl's real Windows TLS backend" >> curl_catalog.log
+          else
+            echo "RESULT: failed to compile" >> curl_catalog.log
+          fi
 
       - name: Print catalog summary
         if: always()
         run: |
-          for f in windows_h_catalog.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log sqlite_catalog.log curl_catalog.log; do
+          for f in windows_h_catalog.log windows_h_compare.log intrin_catalog.log forceinline_catalog.log zlib_h_catalog.log zlib_compare.log sqlite_catalog.log sqlite_compare.log curl_catalog.log; do
             echo "::group::$f"
             cat "$f" 2>/dev/null || echo "(not run on this OS)"
             echo "::endgroup::"
@@ -303,9 +379,12 @@ jobs:
           name: header-catalog-${{ matrix.os }}
           path: |
             windows_h_catalog.log
+            windows_h_compare.log
             intrin_catalog.log
             forceinline_catalog.log
             zlib_h_catalog.log
+            zlib_compare.log
             sqlite_catalog.log
+            sqlite_compare.log
             curl_catalog.log
           if-no-files-found: ignore
