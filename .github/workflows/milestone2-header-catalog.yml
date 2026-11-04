@@ -104,8 +104,8 @@ jobs:
           DUMPBIN=$(find "/c/Program Files/Microsoft Visual Studio" -iname 'dumpbin.exe' -path '*Hostx64/x64*' | head -1)
           IMPORTC_IMPORTS_GETTICKCOUNT=no
           NATIVE_IMPORTS_GETTICKCOUNT=no
-          "$DUMPBIN" /imports probe_windows_h.exe 2>/dev/null | grep -qi GetTickCount && IMPORTC_IMPORTS_GETTICKCOUNT=yes
-          "$DUMPBIN" /imports native_windows_h.exe 2>/dev/null | grep -qi GetTickCount && NATIVE_IMPORTS_GETTICKCOUNT=yes
+          "$DUMPBIN" -imports probe_windows_h.exe 2>/dev/null | grep -qi GetTickCount && IMPORTC_IMPORTS_GETTICKCOUNT=yes
+          "$DUMPBIN" -imports native_windows_h.exe 2>/dev/null | grep -qi GetTickCount && NATIVE_IMPORTS_GETTICKCOUNT=yes
           echo "ImportC binary imports real kernel32 GetTickCount: $IMPORTC_IMPORTS_GETTICKCOUNT" >> windows_h_compare.log
           echo "native binary imports real kernel32 GetTickCount: $NATIVE_IMPORTS_GETTICKCOUNT" >> windows_h_compare.log
           if [ "$IMPORTC_IMPORTS_GETTICKCOUNT" == "yes" ] && [ "$NATIVE_IMPORTS_GETTICKCOUNT" == "yes" ]; then
