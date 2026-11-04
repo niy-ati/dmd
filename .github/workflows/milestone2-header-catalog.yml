@@ -100,7 +100,7 @@ jobs:
         continue-on-error: true
         run: |
           echo "=== native cl.exe vs ImportC: GetTickCount() through real windows.h ===" > windows_h_compare.log
-          cl /nologo probe_windows_h.c /Fe:native_windows_h.exe >> windows_h_compare.log 2>&1
+          cl -nologo probe_windows_h.c -Fe:native_windows_h.exe >> windows_h_compare.log 2>&1
           DUMPBIN=$(find "/c/Program Files/Microsoft Visual Studio" -iname 'dumpbin.exe' -path '*Hostx64/x64*' | head -1)
           IMPORTC_IMPORTS_GETTICKCOUNT=no
           NATIVE_IMPORTS_GETTICKCOUNT=no
@@ -217,7 +217,7 @@ jobs:
           ZINC="${ZLIB_H%/*}"
           WINC="${ZINC/\/c\//C:/}"
           WLIB="${ZLIB/\/c\//C:/}"
-          cl /nologo "/I$WINC" probe_zlib_h.c "$WLIB" /Fe:native_zlib_h.exe >> zlib_compare.log 2>&1
+          cl -nologo "-I$WINC" probe_zlib_h.c "$WLIB" -Fe:native_zlib_h.exe >> zlib_compare.log 2>&1
           IMPORTC_OUT=$(./probe_zlib_h.exe 2>&1 || true)
           NATIVE_OUT=$(./native_zlib_h.exe 2>&1 || true)
           echo "ImportC output: $IMPORTC_OUT" >> zlib_compare.log
@@ -290,7 +290,7 @@ jobs:
         run: |
           echo "=== native cl.exe vs ImportC: sqlite3_libversion() + CREATE/INSERT/SELECT round trip ===" > sqlite_compare.log
           AMAL_DIR=$(find . -maxdepth 1 -iname 'sqlite-amalgamation-*' -type d | head -1)
-          cl /nologo "/I$AMAL_DIR" sqlite_main.c "$AMAL_DIR/sqlite3.c" /Fe:native_sqlite.exe >> sqlite_compare.log 2>&1
+          cl -nologo "-I$AMAL_DIR" sqlite_main.c "$AMAL_DIR/sqlite3.c" -Fe:native_sqlite.exe >> sqlite_compare.log 2>&1
           IMPORTC_OUT=$(./sqlite_probe.exe 2>&1 || true)
           NATIVE_OUT=$(./native_sqlite.exe 2>&1 || true)
           echo "ImportC output: $IMPORTC_OUT" >> sqlite_compare.log
