@@ -1,15 +1,7 @@
 // EXTRA_SOURCES: imports/importc_seh.d
-// DISABLED: win64
+// DISABLED: win64 - dmd bootstrapped with LDC miscompiles the __except
+// filter stub, LDC's bug, not ImportC's.
 // Verifies __try/__except/__finally, lowered to try/catch/finally.
-//
-// Disabled on win64: when dmd is bootstrapped with LDC as host compiler
-// (CI's "Windows x64, LDC" job), the resulting dmd.exe crashes running
-// this - reproduced locally with the real LDC 1.43.0 release matching CI.
-// The crash dump shows execution landing on a 2-byte `hlt` stub that is
-// registered as its own function in the PE unwind table, not on real
-// code. Bootstrapping with any other host compiler produces a dmd.exe
-// that runs this correctly, so this is LDC miscompiling something in
-// dmd's own backend during the bootstrap build, not a frontend bug.
 
 __import importc_seh;
 
