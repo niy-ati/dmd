@@ -140,7 +140,10 @@ jobs:
           & $cdb -g -G -c $cmds $exe --DRT-testmode=run-main 2>&1 | ForEach-Object { "DEBUGSTEP: $_" }
           $dmdExe = (Get-ChildItem -Path . -Recurse -Filter dmd.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'generated.*release' } | Select-Object -First 1 -ExpandProperty FullName)
           Write-Host "DEBUGSTEP: dmd.exe at $dmdExe"
-          & $dmdExe -conf= -m64 -Icompiler/test/runnable -Idruntime/import -g -L/MAP -ofmapbuild.exe compiler/test/runnable/importc_seh_c.c compiler/test/runnable/imports/importc_seh.d 2>&1 | ForEach-Object { "DEBUGSTEP(build): $_" }
+          $phobosLib = (Get-ChildItem -Path .. -Recurse -Filter phobos64.lib -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
+          Write-Host "DEBUGSTEP: phobos64.lib at $phobosLib"
+          $libDir = Split-Path $phobosLib
+          & $dmdExe -conf= -m64 -Icompiler/test/runnable -Idruntime/import -g -L/MAP "-L/LIBPATH:$libDir" -ofmapbuild.exe compiler/test/runnable/importc_seh_c.c compiler/test/runnable/imports/importc_seh.d 2>&1 | ForEach-Object { "DEBUGSTEP(build): $_" }
           if (Test-Path mapbuild.map) {
             Write-Host "DEBUGSTEP: map file follows:"
             Get-Content mapbuild.map | ForEach-Object { Write-Host "DEBUGSTEP(map): $_" }
