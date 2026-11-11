@@ -126,9 +126,14 @@ jobs:
         run: |
           $exe = "compiler/test/test_results/runnable/c/importc_seh_c_0.exe"
           if (-not (Test-Path $exe)) { Write-Host "DEBUGSTEP: binary not found at $exe"; exit 0 }
-          choco install windbg -y --no-progress
-          $cdb = (Get-ChildItem "C:\ProgramData\chocolatey\lib\windbg\tools" -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-          if (-not $cdb) { Write-Host "DEBUGSTEP: cdb.exe not found after install"; exit 0 }
+          $cdb = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Debuggers" -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $cdb) {
+            Write-Host "DEBUGSTEP: installing Windows SDK debugging tools"
+            Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2237387" -OutFile winsdksetup.exe
+            Start-Process -FilePath .\winsdksetup.exe -ArgumentList "/features OptionId.WindowsDesktopDebuggers /quiet /norestart" -Wait
+            $cdb = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Debuggers" -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $cdb) { Write-Host "DEBUGSTEP: cdb.exe still not found"; exit 0 }
           Write-Host "DEBUGSTEP: using cdb at $cdb"
           & $cdb -g -G -c ".ecxr; kb; u @rip L10; lm; q" $exe --DRT-testmode=run-main 2>&1 | ForEach-Object { "DEBUGSTEP: $_" }
       - name: Test frontend subpackage
