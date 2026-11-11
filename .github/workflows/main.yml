@@ -136,7 +136,11 @@ jobs:
           }
           if (-not $cdb) { Write-Host "DEBUGSTEP: cdb.exe still not found"; exit 0 }
           Write-Host "DEBUGSTEP: using cdb at $cdb"
-          & $cdb -g -G -c ".ecxr; kb; u @rip L10; lm; q" $exe --DRT-testmode=run-main 2>&1 | ForEach-Object { "DEBUGSTEP: $_" }
+          $exeDir = (Resolve-Path (Split-Path $exe)).Path
+          Write-Host "DEBUGSTEP: dir listing:"
+          Get-ChildItem $exeDir | ForEach-Object { Write-Host "DEBUGSTEP: $($_.Name)" }
+          $cmds = ".sympath+ $exeDir; .reload /f; ln @rip; x importc_seh_c_0!*; .ecxr; kb; u @rip-0x40 L20; q"
+          & $cdb -g -G -c $cmds $exe --DRT-testmode=run-main 2>&1 | ForEach-Object { "DEBUGSTEP: $_" }
       - name: Test frontend subpackage
         if: '!matrix.coverage && (success() || failure()) && (matrix.host_dmd == ''dmd'' || matrix.host_dmd == ''dmd-latest'')'
         run: ci/run.sh test_frontend_subpackage
