@@ -191,6 +191,43 @@ jobs:
           if (Test-Path plaintest.exe) {
             Write-Host "DEBUGSTEP: running plaintest.exe under cdb"
             & $cdb -g -G -c "ln @rip; .ecxr; kb; q" plaintest.exe 2>&1 | ForEach-Object { Write-Host "DEBUGSTEP(plain-run): $_" }
+          }
+          Write-Host "DEBUGSTEP: now the same thing but split across two files, like the real test"
+          Set-Content -Path throwit.d -Value @(
+            'module throwit;',
+            'void throwIt() { throw new Exception("test"); }'
+          )
+          Set-Content -Path plaintest2.d -Value @(
+            'import throwit;',
+            'int caughtPath()',
+            '{',
+            '    try',
+            '    {',
+            '        throwIt();',
+            '        return 0;',
+            '    }',
+            '    catch (Throwable __seh)',
+            '    {',
+            '        if (1 == 1) { return 2; }',
+            '        else throw __seh;',
+            '    }',
+            '}',
+            'void main()',
+            '{',
+            '    import core.stdc.stdio;',
+            '    if (caughtPath() != 2) { printf("FAIL\n"); return; }',
+            '    printf("OK\n");',
+            '}'
+          )
+          $buildCmd3 = "`"$dmdExe`" -conf= -m64 -Idruntime/import -g -inline -release -O -L/MAP `"-L/LIBPATH:$libDir`" -ofplaintest2.exe plaintest2.d throwit.d > build3.log 2>&1"
+          cmd /c $buildCmd3
+          Write-Host "DEBUGSTEP: plaintest2 build exit code $LASTEXITCODE"
+          if (Test-Path build3.log) { Get-Content build3.log | ForEach-Object { Write-Host "DEBUGSTEP(build3): $_" } }
+          if (Test-Path plaintest2.exe) {
+            Write-Host "DEBUGSTEP: running plaintest2.exe under cdb"
+            & $cdb -g -G -c "ln @rip; .ecxr; kb; q" plaintest2.exe 2>&1 | ForEach-Object { Write-Host "DEBUGSTEP(plain2-run): $_" }
+          } else {
+            Write-Host "DEBUGSTEP: plaintest2.exe not built"
           } else {
             Write-Host "DEBUGSTEP: plaintest.exe not built"
           }
