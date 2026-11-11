@@ -161,6 +161,39 @@ jobs:
             Write-Host "DEBUGSTEP: running mapbuild.exe under cdb"
             & $cdb -g -G -c "ln @rip; .ecxr; kb; q" mapbuild.exe --DRT-testmode=run-main 2>&1 | ForEach-Object { Write-Host "DEBUGSTEP(map-run): $_" }
           }
+          Write-Host "DEBUGSTEP: now building a plain hand-written D equivalent, no ImportC involved"
+          Set-Content -Path plaintest.d -Value @(
+            'void throwIt() { throw new Exception("test"); }',
+            'int caughtPath()',
+            '{',
+            '    try',
+            '    {',
+            '        throwIt();',
+            '        return 0;',
+            '    }',
+            '    catch (Throwable __seh)',
+            '    {',
+            '        if (1 == 1) { return 2; }',
+            '        else throw __seh;',
+            '    }',
+            '}',
+            'void main()',
+            '{',
+            '    import core.stdc.stdio;',
+            '    if (caughtPath() != 2) { printf("FAIL\n"); return; }',
+            '    printf("OK\n");',
+            '}'
+          )
+          $buildCmd2 = "`"$dmdExe`" -conf= -m64 -Idruntime/import -g -inline -release -O -L/MAP `"-L/LIBPATH:$libDir`" -ofplaintest.exe plaintest.d > build2.log 2>&1"
+          cmd /c $buildCmd2
+          Write-Host "DEBUGSTEP: plaintest build exit code $LASTEXITCODE"
+          if (Test-Path build2.log) { Get-Content build2.log | ForEach-Object { Write-Host "DEBUGSTEP(build2): $_" } }
+          if (Test-Path plaintest.exe) {
+            Write-Host "DEBUGSTEP: running plaintest.exe under cdb"
+            & $cdb -g -G -c "ln @rip; .ecxr; kb; q" plaintest.exe 2>&1 | ForEach-Object { Write-Host "DEBUGSTEP(plain-run): $_" }
+          } else {
+            Write-Host "DEBUGSTEP: plaintest.exe not built"
+          }
       - name: Test frontend subpackage
         if: '!matrix.coverage && (success() || failure()) && (matrix.host_dmd == ''dmd'' || matrix.host_dmd == ''dmd-latest'')'
         run: ci/run.sh test_frontend_subpackage
