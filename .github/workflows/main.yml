@@ -143,7 +143,11 @@ jobs:
           $phobosLib = (Get-ChildItem -Path .. -Recurse -Filter phobos64.lib -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
           Write-Host "DEBUGSTEP: phobos64.lib at $phobosLib"
           $libDir = Split-Path $phobosLib
-          & $dmdExe -conf= -m64 -Icompiler/test/runnable -Idruntime/import -g -L/MAP "-L/LIBPATH:$libDir" -ofmapbuild.exe compiler/test/runnable/importc_seh_c.c compiler/test/runnable/imports/importc_seh.d 2>&1 | ForEach-Object { "DEBUGSTEP(build): $_" }
+          & $dmdExe -conf= -m64 -Icompiler/test/runnable -Idruntime/import -g -L/MAP "-L/LIBPATH:$libDir" -ofmapbuild.exe compiler/test/runnable/importc_seh_c.c compiler/test/runnable/imports/importc_seh.d 2>&1 | ForEach-Object { Write-Host "DEBUGSTEP(build): $_" }
+          Write-Host "DEBUGSTEP: dmd exit code $LASTEXITCODE"
+          Write-Host "DEBUGSTEP: cwd is $(Get-Location)"
+          Get-ChildItem -Filter "mapbuild*" | ForEach-Object { Write-Host "DEBUGSTEP: found $($_.FullName)" }
+          Get-ChildItem compiler/test/runnable -Filter "importc_seh_c*" | ForEach-Object { Write-Host "DEBUGSTEP: found $($_.FullName)" }
           if (Test-Path mapbuild.map) {
             Write-Host "DEBUGSTEP: map file follows:"
             Get-Content mapbuild.map | ForEach-Object { Write-Host "DEBUGSTEP(map): $_" }
@@ -152,7 +156,7 @@ jobs:
           }
           if (Test-Path mapbuild.exe) {
             Write-Host "DEBUGSTEP: running mapbuild.exe under cdb"
-            & $cdb -g -G -c "ln @rip; .ecxr; kb; q" mapbuild.exe --DRT-testmode=run-main 2>&1 | ForEach-Object { "DEBUGSTEP(map-run): $_" }
+            & $cdb -g -G -c "ln @rip; .ecxr; kb; q" mapbuild.exe --DRT-testmode=run-main 2>&1 | ForEach-Object { Write-Host "DEBUGSTEP(map-run): $_" }
           }
       - name: Test frontend subpackage
         if: '!matrix.coverage && (success() || failure()) && (matrix.host_dmd == ''dmd'' || matrix.host_dmd == ''dmd-latest'')'
