@@ -266,6 +266,34 @@ jobs:
           } else {
             Write-Host "DEBUGSTEP: plaintest3.exe not built"
           }
+          Write-Host "DEBUGSTEP: now a minimal single-function .c repro through real ImportC"
+          Set-Content -Path minirepro.c -Value @(
+            '__import importc_seh;',
+            'int caughtPath(void)',
+            '{',
+            '    __try {',
+            '        throwIt();',
+            '        return 0;',
+            '    } __except(1) {',
+            '        return 2;',
+            '    }',
+            '}',
+            'int main(void)',
+            '{',
+            '    if (caughtPath() != 2) return 1;',
+            '    return 0;',
+            '}'
+          )
+          $buildCmd5 = "`"$dmdExe`" -conf= -m64 -Icompiler/test/runnable -Idruntime/import -g -inline -release -O -L/MAP `"-L/LIBPATH:$libDir`" -ofminirepro.exe minirepro.c compiler/test/runnable/imports/importc_seh.d > build5.log 2>&1"
+          cmd /c $buildCmd5
+          Write-Host "DEBUGSTEP: minirepro build exit code $LASTEXITCODE"
+          if (Test-Path build5.log) { Get-Content build5.log | ForEach-Object { Write-Host "DEBUGSTEP(build5): $_" } }
+          if (Test-Path minirepro.exe) {
+            Write-Host "DEBUGSTEP: running minirepro.exe under cdb"
+            & $cdb -g -G -c "ln @rip; .ecxr; kb; q" minirepro.exe 2>&1 | ForEach-Object { Write-Host "DEBUGSTEP(mini-run): $_" }
+          } else {
+            Write-Host "DEBUGSTEP: minirepro.exe not built"
+          }
       - name: Test frontend subpackage
         if: '!matrix.coverage && (success() || failure()) && (matrix.host_dmd == ''dmd'' || matrix.host_dmd == ''dmd-latest'')'
         run: ci/run.sh test_frontend_subpackage
