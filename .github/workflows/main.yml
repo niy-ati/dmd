@@ -23,75 +23,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux
-          - job_name: Ubuntu 22.04 x64, DMD (latest)
-            os: ubuntu-22.04
-            host_dmd: dmd
-          # Enable this to replace coverage tests on CircleCI
-          # - job_name: Ubuntu 22.04 x64, DMD (coverage)
-          #   os: ubuntu-22.04
-          #   host_dmd: dmd
-          #   coverage: true
-          - job_name: Ubuntu 22.04 x64, DMD (bootstrap)
-            os: ubuntu-22.04
-            host_dmd: dmd-2.079.0
-            disable_debug_for_dmd_unittests: true # no `-debug` - host frontend too old
-          - job_name: Ubuntu 22.04 x86, DMD (latest)
-            os: ubuntu-22.04
-            model: 32
-            host_dmd: dmd
-          # Disabled because of failure https://issues.dlang.org/show_bug.cgi?id=24518
-          # - job_name: Ubuntu 22.04 x86, DMD (coverage)
-          #   os: ubuntu-22.04
-          #   model: 32
-          #   host_dmd: dmd
-          #   coverage: true
-          - job_name: Ubuntu 22.04 x86, DMD (bootstrap)
-            os: ubuntu-22.04
-            model: 32
-            host_dmd: dmd-2.097.1
-          - job_name: Ubuntu 22.04 x64, LDC
-            os: ubuntu-22.04
-            host_dmd: ldc
-          - job_name: Ubuntu 22.04 x64, GDC
-            os: ubuntu-22.04
-            host_dmd: gdmd-9
-            disable_debug_for_dmd_unittests: true # no `-debug` - host frontend too old
-          - job_name: Alpine 3.21 x64, LDC
-            os: ubuntu-latest
-            container_image: alpine:3.21
-            host_dmd: ldmd2
-          # macOS
-          - job_name: macOS 14 x64, DMD (latest)
-            os: macos-14
-            host_dmd: dmd
-          # Disabled because of failure https://issues.dlang.org/show_bug.cgi?id=24518
-          #- job_name: macOS 14 x64, DMD (coverage)
-          #  os: macos-14
-          #  host_dmd: dmd
-          #  coverage: true
-          - job_name: macOS 14 x64, DMD (bootstrap)
-            os: macos-14
-            host_dmd: dmd-2.107.1
           # Windows
           - job_name: Windows x64, LDC
             os: windows-2022
             host_dmd: ldc-latest
-          - job_name: Windows x86, DMD (latest)
-            os: windows-2022
-            host_dmd: dmd-latest
-            model: 32
-          # FreeBSD (VMs on Ubuntu)
-          - job_name: FreeBSD 14.4 x64, DMD (latest)
-            os: ubuntu-latest
-            vm_os: freebsd
-            vm_os_version: '14.4'
-            host_dmd: dmd
-          - job_name: FreeBSD 14.4 x64, DMD (bootstrap)
-            os: ubuntu-latest
-            vm_os: freebsd
-            vm_os_version: '14.4'
-            host_dmd: dmd-2.095.0
     name: ${{ matrix.job_name }}
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container_image }}
@@ -185,6 +120,17 @@ jobs:
           arch: ${{ env.MODEL == '64' && 'x64' || 'x86' }}
       - name: Test dmd
         run: ci/run.sh test_dmd
+      - name: 'DEBUG: capture crash info for importc_seh_c.c'
+        if: runner.os == 'Windows' && always()
+        shell: pwsh
+        run: |
+          $exe = "compiler/test/test_results/runnable/c/importc_seh_c_0.exe"
+          if (-not (Test-Path $exe)) { Write-Host "DEBUGSTEP: binary not found at $exe"; exit 0 }
+          choco install windbg -y --no-progress
+          $cdb = (Get-ChildItem "C:\ProgramData\chocolatey\lib\windbg\tools" -Recurse -Filter cdb.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $cdb) { Write-Host "DEBUGSTEP: cdb.exe not found after install"; exit 0 }
+          Write-Host "DEBUGSTEP: using cdb at $cdb"
+          & $cdb -g -G -c ".ecxr; kb; u @rip L10; lm; q" $exe --DRT-testmode=run-main 2>&1 | ForEach-Object { "DEBUGSTEP: $_" }
       - name: Test frontend subpackage
         if: '!matrix.coverage && (success() || failure()) && (matrix.host_dmd == ''dmd'' || matrix.host_dmd == ''dmd-latest'')'
         run: ci/run.sh test_frontend_subpackage
