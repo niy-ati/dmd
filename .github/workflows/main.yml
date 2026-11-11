@@ -143,9 +143,12 @@ jobs:
           $phobosLib = (Get-ChildItem -Path .. -Recurse -Filter phobos64.lib -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
           Write-Host "DEBUGSTEP: phobos64.lib at $phobosLib"
           $libDir = Split-Path $phobosLib
-          & $dmdExe -conf= -m64 -Icompiler/test/runnable -Idruntime/import -g -L/MAP "-L/LIBPATH:$libDir" -ofmapbuild.exe compiler/test/runnable/importc_seh_c.c compiler/test/runnable/imports/importc_seh.d 2>&1 | ForEach-Object { Write-Host "DEBUGSTEP(build): $_" }
+          if (Test-Path build.log) { Remove-Item build.log }
+          $buildCmd = "`"$dmdExe`" -conf= -m64 -Icompiler/test/runnable -Idruntime/import -g -L/MAP `"-L/LIBPATH:$libDir`" -ofmapbuild.exe compiler/test/runnable/importc_seh_c.c compiler/test/runnable/imports/importc_seh.d > build.log 2>&1"
+          cmd /c $buildCmd
           Write-Host "DEBUGSTEP: dmd exit code $LASTEXITCODE"
           Write-Host "DEBUGSTEP: cwd is $(Get-Location)"
+          if (Test-Path build.log) { Get-Content build.log | ForEach-Object { Write-Host "DEBUGSTEP(build): $_" } }
           Get-ChildItem -Filter "mapbuild*" | ForEach-Object { Write-Host "DEBUGSTEP: found $($_.FullName)" }
           Get-ChildItem compiler/test/runnable -Filter "importc_seh_c*" | ForEach-Object { Write-Host "DEBUGSTEP: found $($_.FullName)" }
           if (Test-Path mapbuild.map) {
